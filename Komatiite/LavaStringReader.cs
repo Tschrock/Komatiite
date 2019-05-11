@@ -1,15 +1,17 @@
 using System.IO;
 using System.Text;
 
-public class LavaStringReader : ILavaReader {
+public class LavaStringReader : ILavaReader
+{
 
     private string inputString;
 
     private int currentIndex = 0;
 
-    private CharacterPosition currentPosition = new CharacterPosition(0 ,0 ,0);
+    private CharacterPosition currentPosition = new CharacterPosition(0, 0, 0);
 
-    public LavaStringReader(string input) {
+    public LavaStringReader(string input)
+    {
         inputString = input;
     }
 
@@ -21,7 +23,7 @@ public class LavaStringReader : ILavaReader {
     {
         currentIndex = currentIndex + 1;
 
-        if(currentIndex >= inputString.Length) return -1;
+        if (currentIndex >= inputString.Length) return -1;
 
         var c = inputString[currentIndex];
 
@@ -34,12 +36,13 @@ public class LavaStringReader : ILavaReader {
     {
         var peekIndex = currentIndex + offset;
 
-        if(peekIndex >= inputString.Length) return -1;
+        if (peekIndex >= inputString.Length) return -1;
 
         return inputString[peekIndex];
     }
 
-    public override string ToString() {
+    public override string ToString()
+    {
         return inputString;
     }
 

@@ -5,9 +5,9 @@ namespace Komatiite
 {
     public class Template
     {
-		internal Template()
-		{
-		}
+        internal Template()
+        {
+        }
 
         public static Template Parse(string source)
         {

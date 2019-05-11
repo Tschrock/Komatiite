@@ -26,8 +26,10 @@ public class Token
     public TokenType TokenType { get; set; }
     public CharacterPosition StartPosition { get; set; }
     public CharacterPosition EndPosition { get; set; }
-    public int Length {
-        get {
+    public int Length
+    {
+        get
+        {
             return EndPosition.Index - StartPosition.Index;
         }
     }

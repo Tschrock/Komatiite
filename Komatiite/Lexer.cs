@@ -139,12 +139,13 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
     {
 
         var token = AddToken(type, reader.CurrentPosition.Clone(), reader.CurrentPosition.Clone());
-        
-        while(tokenLength --> 1) {
+
+        while (tokenLength --> 1)
+        {
             token.EndPosition.BumpForChar(reader.CurrentCharacter);
             reader.NextCharacter();
         }
-        
+
         reader.NextCharacter();
 
         return token;
@@ -481,58 +482,61 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
             case '"': AddTokenAndNext(TokenType.STRING_START); ReadStringContent('"'); return;
             case '\'': AddTokenAndNext(TokenType.STRING_START); ReadStringContent('\''); return;
             case '<':
-                
+
                 c2 = reader.PeekCharacter(1);
-                if(c2 == '=') AddTokenAndNext(TokenType.LESS_THAN_OR_EQUAL, 2);
+                if (c2 == '=') AddTokenAndNext(TokenType.LESS_THAN_OR_EQUAL, 2);
                 else AddTokenAndNext(TokenType.LESS_THAN);
 
                 return;
             case '>':
-                
+
                 c2 = reader.PeekCharacter(1);
-                if(c2 == '=') AddTokenAndNext(TokenType.GREATER_THAN_OR_EQUAL, 2);
+                if (c2 == '=') AddTokenAndNext(TokenType.GREATER_THAN_OR_EQUAL, 2);
                 else AddTokenAndNext(TokenType.GREATER_THAN);
 
-                
                 return;
             case '=':
 
                 c2 = reader.PeekCharacter(1);
-                if(c2 == '=') AddTokenAndNext(TokenType.EQUALS, 2);
+                if (c2 == '=') AddTokenAndNext(TokenType.EQUALS, 2);
                 else AddTokenAndNext(TokenType.ASSIGNMENT);
-                
+
                 return;
             case '!':
 
                 c2 = reader.PeekCharacter(1);
-                if(c2 == '=') {
+                if (c2 == '=')
+                {
                     AddTokenAndNext(TokenType.EQUALS, 2);
                     return;
                 }
 
                 break;
-            case '.': 
+            case '.':
 
                 c2 = reader.PeekCharacter(1);
-                if(c2 == '.') {
+                if (c2 == '.')
+                {
                     AddTokenAndNext(TokenType.RANGE, 2);
                     return;
                 }
-                else if(IsDigit(c2)) {
-
+                else if (IsDigit(c2))
+                {
+                    // We need to figure out if it's a number (.1234) or a dot and an identifier (.234test) 
                     var startPosition = reader.CurrentPosition.Clone();
 
                 }
-                else {
-                    AddTokenAndNext(TokenType.Dot, 1);
+                else
+                {
+                    AddTokenAndNext(TokenType.DOT, 1);
                 }
-                
+
                 break;
-            case '-': 
-                
+            case '-':
+
                 break;
-            case '}': 
-                
+            case '}':
+
                 break;
             default:
 

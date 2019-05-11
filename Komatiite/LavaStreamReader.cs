@@ -14,7 +14,7 @@ public class LavaStreamReader : ILavaReader
 
     private int currentCharacter = -1;
 
-    private CharacterPosition currentPosition = new CharacterPosition(0 ,0 ,0);
+    private CharacterPosition currentPosition = new CharacterPosition(0, 0, 0);
 
     private int[] readBuffer = new int[8];
 
@@ -71,7 +71,7 @@ public class LavaStreamReader : ILavaReader
 
     public int PeekCharacter(int offset)
     {
-        
+
         // Buffer more characters if needed
         while (readBufferLength <= offset)
         {
@@ -89,21 +89,24 @@ public class LavaStreamReader : ILavaReader
 
         // Calculate the read index
         var readIndex = (readBufferStartIndex + offset) & 7;
-        
+
         // Return the buffered value
         return readBuffer[readIndex];
 
     }
 
-    public override string ToString() {
-        if(sourceString != null) return sourceString;
+    public override string ToString()
+    {
+        if (sourceString != null) return sourceString;
         else return sourceString = sourceStringBuilder.ToString();
     }
 
-    private void RecordCharacter(int c) {
-        if(c != -1) {
-           sourceString = null;
-           sourceStringBuilder.Append(c); 
+    private void RecordCharacter(int c)
+    {
+        if (c != -1)
+        {
+            sourceString = null;
+            sourceStringBuilder.Append(c);
         }
     }
 

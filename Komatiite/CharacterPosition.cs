@@ -8,17 +8,17 @@ public class CharacterPosition
     }
 
     public int Column { get; set; }
-    
+
     public int Row { get; set; }
-    
+
     public int Index { get; set; }
-    
+
     public void BumpRow()
     {
         this.Column = 0;
         this.Row = this.Row + 1;
     }
-    
+
     public void BumpForChar(int c)
     {
         if (c != -1)
@@ -31,10 +31,11 @@ public class CharacterPosition
         }
     }
 
-    public CharacterPosition Clone() {
+    public CharacterPosition Clone()
+    {
         return new CharacterPosition(this.Column, this.Row, this.Index);
     }
 
-    public static CharacterPosition Empty = new CharacterPosition(-1,-1,-1);
+    public static CharacterPosition Empty = new CharacterPosition(-1, -1, -1);
 
 }
