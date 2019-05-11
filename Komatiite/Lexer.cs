@@ -32,30 +32,52 @@ using System.Text;
 public class Lexer : IEnumerable<Token>, IEnumerator<Token>
 {
 
-    public string Template { get; private set; }
+    #region Constants
 
-    public Lexer(string template)
-    {
-        this.Template = template;
-    }
+    static readonly char[] START_VARIABLE = new char[] { '{', '{' };
 
-    public void Reset()
-    {
-        currentIndex = 0;
-        this.nextTokens.Clear();
-    }
+    static readonly char[] END_VARIABLE = new char[] { '}', '}' };
 
-    private Token currentToken;
+    static readonly char[] START_TAG = new char[] { '{', '%' };
 
-    public Token Current => currentToken;
+    static readonly char[] END_TAG = new char[] { '%', '}' };
 
-    object IEnumerator.Current => currentToken;
+    static readonly char[] START_SHORTCODE = new char[] { '{', '[' };
 
-    private int currentIndex;
+    static readonly char[] END_SHORTCODE = new char[] { ']', '}' };
+
+    static readonly char[] START_SHORTHAND_LITERAL = new char[] { '{', '{', '{' };
+
+    static readonly char[] END_SHORTHAND_LITERAL = new char[] { '}', '}', '}' };
+
+    static readonly char[] START_SHORTHAND_COMMENT = new char[] { '{', '#' };
+
+    static readonly char[] END_SHORTHAND_COMMENT = new char[] { '#', '}' };
+
+    #endregion
+
+
+    #region Fields
+
+    private ILavaReader reader;
 
     private LexerMode lexerMode;
 
+    private Token currentToken;
+
     private Queue<Token> nextTokens = new Queue<Token>();
+
+    #endregion
+
+
+    public Lexer(string input) : this(new LavaStringReader(input)) { }
+
+    public Lexer(Stream input) : this(new LavaStreamReader(input)) { }
+
+    public Lexer(ILavaReader lavaReader) => this.reader = lavaReader;
+
+
+    #region IEnumerable implimentation
 
     public IEnumerator<Token> GetEnumerator()
     {
@@ -64,6 +86,148 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
     }
 
     IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
+
+    #endregion
+
+
+    #region IEnumerator implimentation
+
+    public Token Current => currentToken;
+
+    object IEnumerator.Current => currentToken;
+
+    public void Reset()
+    {
+        this.currentToken = null;
+        this.nextTokens.Clear();
+    }
+
+    public bool MoveNext()
+    {
+        return ReadNextToken();
+    }
+
+    #endregion
+
+
+    private void ReadNextToken_Raw()
+    {
+
+        // If there's a token/eof at the current position, return that
+        if (TryReadLavaStartOrEOF(0)) return;
+
+        // Otherwise, start a RAW_TEXT token
+        var rawToken = AddTokenForOffset(TokenType.RAW_TEXT, 0, 0);
+
+        // and read until we find one
+        do reader.NextCharacter();
+        while (!TryReadLavaStartOrEOF(1));
+
+        // Make sure to close the RAW_TEXT token
+        rawToken.Length = this.currentIndex - rawToken.StartIndex;
+
+    }
+
+    private bool TryReadLavaStartOrEOF(int offset)
+    {
+
+        int c = reader.PeekCharacter(offset);
+
+        if (IsEOF(c))
+        {
+            AddTokenForOffset(TokenType.EOF, offset, 0);
+            return true;
+        }
+        else if (c == '{')
+        {
+            int c2 = reader.PeekCharacter(offset + 1);
+            if (c2 == '{')
+            {
+                int c3 = reader.PeekCharacter(offset + 2);
+                if (c3 == '{')
+                {
+
+                    lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+                    AddTokenForOffset(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, offset, 3);
+
+                    int c4 = reader.PeekCharacter(offset + 3);
+                    if (c4 == '-')
+                    {
+                        AddTokenForOffset(TokenType.LAVA_TRIM_WHITESPACE_FLAG, offset + 3, 1);
+                    }
+
+                    return true;
+
+                }
+                else
+                {
+
+                    lexerMode = LexerMode.LAVA_VARIABLE;
+                    AddTokenForOffset(TokenType.LAVA_VARIABLE_ENTER, offset, 2);
+
+                    int c4 = reader.PeekCharacter(offset + 2);
+                    if (c4 == '-')
+                    {
+                        AddTokenForOffset(TokenType.LAVA_TRIM_WHITESPACE_FLAG, offset + 2, 1);
+                    }
+
+                    return true;
+
+                }
+
+
+            }
+            else if (c2 == '%')
+            {
+
+                lexerMode = LexerMode.LAVA_TAG;
+                AddTokenForOffset(TokenType.LAVA_TAG_ENTER, offset, 2);
+
+                int c4 = reader.PeekCharacter(offset + 2);
+                if (c4 == '-')
+                {
+                    AddTokenForOffset(TokenType.LAVA_TRIM_WHITESPACE_FLAG, offset + 2, 1);
+                }
+
+                return true;
+
+
+            }
+            else if (c2 == '[')
+            {
+
+                lexerMode = LexerMode.LAVA_SHORTCODE;
+                AddTokenForOffset(TokenType.LAVA_SHORTCODE_ENTER, offset, 2);
+
+                int c4 = reader.PeekCharacter(offset + 2);
+                if (c4 == '-')
+                {
+                    AddTokenForOffset(TokenType.LAVA_TRIM_WHITESPACE_FLAG, offset + 2, 1);
+                }
+
+                return true;
+
+
+            }
+            else if (c2 == '#')
+            {
+
+                lexerMode = LexerMode.LAVA_SHORTHAND_COMMENT;
+                AddTokenForOffset(TokenType.LAVA_SHORTHAND_COMMENT_ENTER, offset, 2);
+
+                int c4 = reader.PeekCharacter(offset + 2);
+                if (c4 == '-')
+                {
+                    AddTokenForOffset(TokenType.LAVA_TRIM_WHITESPACE_FLAG, offset + 2, 1);
+                }
+
+                return true;
+
+
+            }
+        }
+        return false;
+    }
 
     private void MoveNext_Raw()
     {
@@ -78,66 +242,52 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
         while (!TryReadLavaStartOrEOF());
 
         // Make sure to close the RAW_TEXT token
-        rawToken.EndIndex = this.currentIndex - 1;
+        rawToken.Length = this.currentIndex - rawToken.StartIndex;
 
     }
 
     private bool TryReadLavaStartOrEOF()
     {
-        var startIndex = this.currentIndex;
-        var endIndex = startIndex;
-
-        var c = CharacterAt(startIndex);
-        if (c == -1)
+        if (IsEOF(c))
         {
             AddTokenFromCurrent(TokenType.EOF, 0);
             return true;
         }
-        else if (c == '{')
+        else if (TryMatch("{{{"))
         {
-            var c2 = CharacterAt(++endIndex);
-            if (c2 == '{')
-            {
-                var c3 = CharacterAt(++endIndex);
-                if (c3 == '{')
-                {
-                    lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
-                    AddTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, 3);
-                    return true;
-                }
-                else
-                {
-                    lexerMode = LexerMode.LAVA_VARIABLE;
-                    AddTokenFromCurrent(TokenType.LAVA_VARIABLE_ENTER, 2);
+            lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+            AddTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, 3);
 
-                    if (c3 == '-')
-                    {
-                        endIndex++;
-                        AddToken(new Token(TokenType.LAVA_TRIM_WHITESPACE_FLAG, endIndex, endIndex));
-                    }
+            int peekIndex = currentIndex + 3;
+            if (CharacterAt(peekIndex) == '-') AddToken(new Token(TokenType.LAVA_TRIM_WHITESPACE_FLAG, peekIndex, 1));
 
-                    return true;
-                }
-            }
-            else if (c2 == '%')
-            {
-                lexerMode = LexerMode.LAVA_TAG;
-                AddToken(new Token(TokenType.LAVA_TAG_ENTER, startIndex, endIndex));
-                return true;
-            }
-            else if (c2 == '[')
-            {
-                lexerMode = LexerMode.LAVA_SHORTCODE;
-                AddToken(new Token(TokenType.LAVA_SHORTCODE_ENTER, startIndex, endIndex));
-                return true;
-            }
-            else if (c2 == '#')
-            {
-                lexerMode = LexerMode.LAVA_SHORTHAND_COMMENT;
-                AddToken(new Token(TokenType.LAVA_SHORTHAND_COMMENT_ENTER, startIndex, endIndex));
-                return true;
-            }
+            return true;
         }
+        else if (TryMatch("{{"))
+        {
+            lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+            AddTokenFromCurrent(TokenType.LAVA_TAG_ENTER, 2);
+            return true;
+        }
+        else if (TryMatch("{%"))
+        {
+            lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+            AddTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, 2);
+            return true;
+        }
+        else if (TryMatch("{["))
+        {
+            lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+            AddTokenFromCurrent(TokenType.LAVA_SHORTCODE_ENTER, 2);
+            return true;
+        }
+        else if (TryMatch("{#"))
+        {
+            lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+            AddTokenFromCurrent(TokenType.LAVA_SHORTHAND_COMMENT_ENTER, 2);
+            return true;
+        }
+
         return false;
     }
 
@@ -145,8 +295,13 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
     {
         return index >= 0 && index < Template.Length ? Template[index] : -1;
     }
-    
+
     private bool TryMatch(string text)
+    {
+        return TryMatch(this.currentIndex, text);
+    }
+
+    private bool TryMatch(char[] text)
     {
         return TryMatch(this.currentIndex, text);
     }
@@ -161,9 +316,19 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
         return true;
     }
 
+    private bool TryMatch(int startIndex, char[] text)
+    {
+        if (startIndex + text.Length >= this.Template.Length) return false;
+        for (int i = 0; i < text.Length; startIndex++, i++)
+        {
+            if (this.Template[startIndex] != text[i]) return false;
+        }
+        return true;
+    }
+
     private void AddToken(Token newToken)
     {
-        if(this.currentToken == null) this.currentToken = newToken;
+        if (this.currentToken == null) this.currentToken = newToken;
         else this.nextTokens.Enqueue(newToken);
     }
     private Token AddTokenFromCurrent(TokenType tokenType, int length)
@@ -378,7 +543,7 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
         return false;
     }
 
-    public bool MoveNext()
+    public bool ReadNextToken()
     {
         if (this.currentToken != null && this.currentToken.TokenType == TokenType.EOF) return false;
 
@@ -434,6 +599,12 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
     public static bool IsDigit(int c)
     {
         return c >= 48 && c <= 57;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsEOF(int c)
+    {
+        return c == -1;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
