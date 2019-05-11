@@ -1,6 +1,8 @@
 public interface ILavaReader
 {
     int CurrentCharacter { get; }
+    
+    CharacterPosition CurrentPosition { get; }
 
     int NextCharacter();
 

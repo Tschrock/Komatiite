@@ -14,11 +14,13 @@ public class LavaStreamReader : ILavaReader
 
     private int currentCharacter = -1;
 
-    private int[] peekBuffer = new int[8];
+    private CharacterPosition currentPosition = new CharacterPosition(0 ,0 ,0);
 
-    private int peekStartIndex = 0;
+    private int[] readBuffer = new int[8];
 
-    private int peekLength = 0;
+    private int readBufferStartIndex = 0;
+
+    private int readBufferLength = 0;
 
     public LavaStreamReader(Stream inputStream)
     {
@@ -28,39 +30,69 @@ public class LavaStreamReader : ILavaReader
 
     public int CurrentCharacter => currentCharacter;
 
+    public CharacterPosition CurrentPosition => currentPosition;
+
     public int NextCharacter()
     {
-        // Check if anything's been peek buffered
-        if (peekLength > 0)
+
+        // Check if anything's been buffered ahead
+        if (readBufferLength > 1)
         {
-            // If so, use from the buffer
-            peekStartIndex = (peekStartIndex + 1) & 7;
-            peekLength = peekLength - 1;
-            return currentCharacter = peekBuffer[peekStartIndex];
+
+            // Move the start index forward
+            readBufferStartIndex = (readBufferStartIndex + 1) & 7;
+
+            // Decrement the length
+            readBufferLength = readBufferLength - 1;
+
+            // Read the buffered character
+            currentCharacter = readBuffer[readBufferStartIndex];
+
         }
         else
         {
-            // If not, just read the next char
+            // Read the next character
             currentCharacter = inputReader.Read();
-            RecordCharacter(currentCharacter);
-            return currentCharacter;
+
+            // Save the character into the read buffer so we can Peek(0) it
+            readBuffer[readBufferStartIndex] = currentCharacter;
         }
+
+        // Record the character
+        RecordCharacter(currentCharacter);
+
+        // Bump the character position
+        currentPosition.BumpForChar(currentCharacter);
+
+        // Return the new current character;
+        return currentCharacter;
+
     }
 
     public int PeekCharacter(int offset)
     {
+        
         // Buffer more characters if needed
-        while (peekLength < offset)
+        while (readBufferLength <= offset)
         {
-            var writeIndex = (peekStartIndex + peekLength) & 7;
-            peekBuffer[writeIndex] = inputReader.Read();
-            RecordCharacter(peekBuffer[writeIndex]);
-            peekLength = peekLength + 1;
+
+            // Calculate the next write position
+            var writeIndex = (readBufferStartIndex + readBufferLength) & 7;
+
+            // Read the next character
+            readBuffer[writeIndex] = inputReader.Read();
+
+            // Increment the length
+            readBufferLength = readBufferLength + 1;
+
         }
 
+        // Calculate the read index
+        var readIndex = (readBufferStartIndex + offset) & 7;
+        
         // Return the buffered value
-        var peakIndex = (peekStartIndex + offset) & 7;
-        return peekBuffer[peakIndex];
+        return readBuffer[readIndex];
+
     }
 
     public override string ToString() {

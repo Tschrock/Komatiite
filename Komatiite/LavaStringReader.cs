@@ -7,11 +7,15 @@ public class LavaStringReader : ILavaReader {
 
     private int currentIndex = 0;
 
+    private CharacterPosition currentPosition = new CharacterPosition(0 ,0 ,0);
+
     public LavaStringReader(string input) {
         inputString = input;
     }
 
     public int CurrentCharacter => inputString[currentIndex];
+
+    public CharacterPosition CurrentPosition => currentPosition;
 
     public int NextCharacter()
     {
@@ -19,7 +23,11 @@ public class LavaStringReader : ILavaReader {
 
         if(currentIndex >= inputString.Length) return -1;
 
-        return inputString[currentIndex];
+        var c = inputString[currentIndex];
+
+        currentPosition.BumpForChar(c);
+
+        return c;
     }
 
     public int PeekCharacter(int offset)
