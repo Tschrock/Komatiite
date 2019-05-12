@@ -15,7 +15,7 @@ public class LavaStringReader : ILavaReader
         inputString = input;
     }
 
-    public int CurrentCharacter => inputString[currentIndex];
+    public int CurrentCharacter => currentIndex < inputString.Length ? inputString[currentIndex] : -1;
 
     public CharacterPosition CurrentPosition => currentPosition;
 
