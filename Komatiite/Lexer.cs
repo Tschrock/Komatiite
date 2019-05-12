@@ -616,6 +616,29 @@ namespace Komatiite
                         return true;
 
                     }
+                    else if (c2 == '.')
+                    {
+
+                        // Start the token
+                        var numberToken = AddToken(TokenType.DECIMAL);
+
+                        // Consume the minus sign
+                        reader.NextCharacter();
+
+                        // Consume the dot and get the next character
+                        numberToken.EndPosition.Index++;
+                        var cx = reader.NextCharacter();
+
+                        // Continue consuming characters untill we find one that isn't a digit
+                        while (IsDigit(cx))
+                        {
+                            numberToken.EndPosition.Index++;
+                            cx = reader.NextCharacter();
+                        }
+
+                        return true;
+
+                    }
 
                     break;
                 case '}':
