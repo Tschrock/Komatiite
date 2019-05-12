@@ -414,6 +414,17 @@ public class Lexer : IEnumerable<Token>, IEnumerator<Token>
             // Get the next character
             c = reader.NextCharacter();
 
+            // If it's a backslash
+            if(c == '\\') {
+                
+                // Skip the backslash
+                reader.NextCharacter();
+
+                // Skip the next character
+                c = reader.NextCharacter();
+
+            }
+
             // Check for EOF
             if (TryReadEOF()) return;
 
