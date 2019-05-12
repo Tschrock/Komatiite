@@ -1,13 +1,18 @@
-public interface ILavaReader
+namespace Komatiite
 {
-    int CurrentCharacter { get; }
 
-    CharacterPosition CurrentPosition { get; }
+    public interface ILavaReader
+    {
+        int CurrentCharacter { get; }
 
-    int NextCharacter();
+        CharacterPosition CurrentPosition { get; }
 
-    int PeekCharacter(int offset);
+        int NextCharacter();
 
-    string ToString();
+        int PeekCharacter(int offset);
+
+        string ToString();
+
+    }
 
 }

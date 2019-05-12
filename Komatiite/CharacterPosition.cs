@@ -1,3 +1,6 @@
+namespace Komatiite
+{
+
 public class CharacterPosition
 {
     public CharacterPosition(int column, int row, int index)
@@ -38,4 +41,7 @@ public class CharacterPosition
 
     public static CharacterPosition Empty = new CharacterPosition(-1, -1, -1);
 
+
+    }
+    
 }

@@ -1,49 +1,54 @@
 using System.IO;
 using System.Text;
 
-public class LavaStringReader : ILavaReader
+namespace Komatiite
 {
 
-    private string inputString;
-
-    private int currentIndex = 0;
-
-    private CharacterPosition currentPosition = new CharacterPosition(0, 0, 0);
-
-    public LavaStringReader(string input)
+    public class LavaStringReader : ILavaReader
     {
-        inputString = input;
-    }
 
-    public int CurrentCharacter => currentIndex < inputString.Length ? inputString[currentIndex] : -1;
+        private string inputString;
 
-    public CharacterPosition CurrentPosition => currentPosition;
+        private int currentIndex = 0;
 
-    public int NextCharacter()
-    {
-        currentIndex = currentIndex + 1;
+        private CharacterPosition currentPosition = new CharacterPosition(0, 0, 0);
 
-        if (currentIndex >= inputString.Length) return -1;
+        public LavaStringReader(string input)
+        {
+            inputString = input;
+        }
 
-        var c = inputString[currentIndex];
+        public int CurrentCharacter => currentIndex < inputString.Length ? inputString[currentIndex] : -1;
 
-        currentPosition.BumpForChar(c);
+        public CharacterPosition CurrentPosition => currentPosition;
 
-        return c;
-    }
+        public int NextCharacter()
+        {
+            currentIndex = currentIndex + 1;
 
-    public int PeekCharacter(int offset)
-    {
-        var peekIndex = currentIndex + offset;
+            if (currentIndex >= inputString.Length) return -1;
 
-        if (peekIndex >= inputString.Length) return -1;
+            var c = inputString[currentIndex];
 
-        return inputString[peekIndex];
-    }
+            currentPosition.BumpForChar(c);
 
-    public override string ToString()
-    {
-        return inputString;
+            return c;
+        }
+
+        public int PeekCharacter(int offset)
+        {
+            var peekIndex = currentIndex + offset;
+
+            if (peekIndex >= inputString.Length) return -1;
+
+            return inputString[peekIndex];
+        }
+
+        public override string ToString()
+        {
+            return inputString;
+        }
+
     }
 
 }

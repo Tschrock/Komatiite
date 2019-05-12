@@ -1,4 +1,6 @@
 
+namespace Komatiite
+{
 
 using System.Text;
 
@@ -32,6 +34,9 @@ public class Token
         {
             return EndPosition.Index - StartPosition.Index;
         }
+    }
+
+
     }
 
 }
