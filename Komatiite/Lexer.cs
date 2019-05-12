@@ -457,18 +457,58 @@ namespace Komatiite
 
         }
 
-        private void ReadLavaVariable()
+        private void ReadLava()
         {
-            TryReadLavaVariable(true);
+            TryReadLava(true);
         }
 
-        private bool TryReadLavaVariable(bool fallback)
+        private bool TryReadLava(bool fallback)
         {
 
             SkipWhitespace();
 
             int c = reader.CurrentCharacter;
             int c2;
+
+            
+            // Check for end tags
+            if (lexerMode == LexerMode.LAVA_VARIABLE && c == '}')
+            {
+
+                c2 = reader.PeekCharacter(1);
+                if (c2 == '}')
+                {
+                    lexerMode = LexerMode.RAW;
+                    AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
+                    return true;
+                }
+
+            }
+            else if (lexerMode == LexerMode.LAVA_TAG && c == '%')
+            {
+
+                c2 = reader.PeekCharacter(1);
+                if (c2 == '}')
+                {
+                    lexerMode = LexerMode.RAW;
+                    AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
+                    return true;
+                }
+
+            }
+            else if (lexerMode == LexerMode.LAVA_SHORTCODE && c == ']')
+            {
+
+                c2 = reader.PeekCharacter(1);
+                if (c2 == '}')
+                {
+                    lexerMode = LexerMode.RAW;
+                    AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
+                    return true;
+                }
+
+            }
+
 
             // Try to match specific characters with a case
             switch (c)
@@ -563,7 +603,7 @@ namespace Komatiite
                 case '-':
 
                     c2 = reader.PeekCharacter(1);
-                    if (c2 == '}')
+                    if (lexerMode == LexerMode.LAVA_VARIABLE && c2 == '}')
                     {
 
                         var c3 = reader.PeekCharacter(2);
@@ -572,6 +612,36 @@ namespace Komatiite
                             lexerMode = LexerMode.RAW;
                             AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
                             AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
+                            return true;
+                        }
+
+                        break;
+
+                    }
+                    else if (lexerMode == LexerMode.LAVA_TAG && c2 == '%')
+                    {
+
+                        var c3 = reader.PeekCharacter(2);
+                        if (c3 == '}')
+                        {
+                            lexerMode = LexerMode.RAW;
+                            AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+                            AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
+                            return true;
+                        }
+
+                        break;
+
+                    }
+                    else if (lexerMode == LexerMode.LAVA_SHORTCODE && c2 == ']')
+                    {
+
+                        var c3 = reader.PeekCharacter(2);
+                        if (c3 == '}')
+                        {
+                            lexerMode = LexerMode.RAW;
+                            AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+                            AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
                             return true;
                         }
 
@@ -641,21 +711,9 @@ namespace Komatiite
                     }
 
                     break;
-                case '}':
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '}')
-                    {
-                        lexerMode = LexerMode.RAW;
-                        AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
-                        return true;
-                    }
-
-                    break;
             }
 
-            // Use ifs for the more compicated checks
-
+            // More advanced checks
             if (IsDigit(c))
             {
 
@@ -721,7 +779,7 @@ namespace Komatiite
                 var cx = reader.NextCharacter();
 
                 // Continue consuming characters untill we find one that isn't a digit
-                while (!TryReadLavaVariable(false))
+                while (!TryReadLava(false))
                 {
                     numberToken.EndPosition.Index++;
                     cx = reader.NextCharacter();
@@ -760,7 +818,9 @@ namespace Komatiite
                     ReadRaw();
                     break;
                 case LexerMode.LAVA_VARIABLE:
-                    ReadLavaVariable();
+                case LexerMode.LAVA_TAG:
+                case LexerMode.LAVA_SHORTCODE:
+                    ReadLava();
                     break;
                 default:
                     ReadRaw();
