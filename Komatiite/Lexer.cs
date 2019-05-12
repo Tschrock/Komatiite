@@ -698,7 +698,7 @@ namespace Komatiite
                 var cx = reader.NextCharacter();
 
                 // Continue consuming characters untill we find one that isn't a digit
-                while (TryReadLavaVariable(false))
+                while (!TryReadLavaVariable(false))
                 {
                     numberToken.EndPosition.Index++;
                     cx = reader.NextCharacter();
