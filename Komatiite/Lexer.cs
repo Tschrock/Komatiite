@@ -40,6 +40,10 @@ namespace Komatiite
 
         private LexerMode lexerMode;
 
+        private int lexerModeModifier;
+
+        private Stack<KeyValuePair<LexerMode, int>> lexerModeStack = new Stack<KeyValuePair<LexerMode, int>>();
+
         private Token currentToken;
 
         private Token previousToken;
@@ -211,7 +215,7 @@ namespace Komatiite
                         reader.NextCharacter();
 
                         // Set the lexer mode
-                        lexerMode = LexerMode.LAVA_SHORTHAND_LITERAL;
+                        lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTHAND_LITERAL, -1));
 
                         // Add the token
                         AddToken(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, startPosition, reader.CurrentPosition.Clone());
@@ -230,7 +234,7 @@ namespace Komatiite
                     {
 
                         // Set the lexer mode
-                        lexerMode = LexerMode.LAVA_VARIABLE;
+                        lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_VARIABLE, -1));
 
                         // Add the token
                         AddToken(TokenType.LAVA_VARIABLE_ENTER, startPosition, reader.CurrentPosition.Clone());
@@ -257,7 +261,7 @@ namespace Komatiite
                     reader.NextCharacter();
 
                     // Set the lexer mode
-                    lexerMode = LexerMode.LAVA_TAG;
+                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_TAG, -1));
 
                     // Add the token
                     AddToken(TokenType.LAVA_TAG_ENTER, startPosition, reader.CurrentPosition.Clone());
@@ -282,7 +286,7 @@ namespace Komatiite
                     reader.NextCharacter();
 
                     // Set the lexer mode
-                    lexerMode = LexerMode.LAVA_SHORTCODE;
+                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTCODE, -1));
 
                     // Add the token
                     AddToken(TokenType.LAVA_SHORTCODE_ENTER, startPosition, reader.CurrentPosition.Clone());
@@ -307,7 +311,7 @@ namespace Komatiite
                     reader.NextCharacter();
 
                     // Set the lexer mode
-                    lexerMode = LexerMode.LAVA_SHORTHAND_COMMENT;
+                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTHAND_COMMENT, -1));
 
                     // Add the token
                     AddToken(TokenType.LAVA_SHORTHAND_COMMENT_ENTER, startPosition, reader.CurrentPosition.Clone());
@@ -478,7 +482,7 @@ namespace Komatiite
                 c2 = reader.PeekCharacter(1);
                 if (c2 == '}')
                 {
-                    lexerMode = LexerMode.RAW;
+                    lexerModeStack.Pop();
                     AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
                     return true;
                 }
@@ -490,7 +494,7 @@ namespace Komatiite
                 c2 = reader.PeekCharacter(1);
                 if (c2 == '}')
                 {
-                    lexerMode = LexerMode.RAW;
+                    lexerModeStack.Pop();
                     AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
                     return true;
                 }
@@ -502,7 +506,7 @@ namespace Komatiite
                 c2 = reader.PeekCharacter(1);
                 if (c2 == '}')
                 {
-                    lexerMode = LexerMode.RAW;
+                    lexerModeStack.Pop();
                     AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
                     return true;
                 }
@@ -609,7 +613,7 @@ namespace Komatiite
                         var c3 = reader.PeekCharacter(2);
                         if (c3 == '}')
                         {
-                            lexerMode = LexerMode.RAW;
+                            lexerModeStack.Pop();
                             AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
                             AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
                             return true;
@@ -624,7 +628,7 @@ namespace Komatiite
                         var c3 = reader.PeekCharacter(2);
                         if (c3 == '}')
                         {
-                            lexerMode = LexerMode.RAW;
+                            lexerModeStack.Pop();
                             AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
                             AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
                             return true;
@@ -639,7 +643,7 @@ namespace Komatiite
                         var c3 = reader.PeekCharacter(2);
                         if (c3 == '}')
                         {
-                            lexerMode = LexerMode.RAW;
+                            lexerModeStack.Pop();
                             AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
                             AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
                             return true;
@@ -811,6 +815,18 @@ namespace Komatiite
             this.currentToken = null;
 
             if (ShiftTokenStack()) return true;
+
+            if (lexerModeStack.Count > 0)
+            {
+                var kv = lexerModeStack.Peek();
+                lexerMode =  kv.Key;
+                lexerModeModifier = kv.Value;
+            }
+            else
+            {
+                lexerMode = LexerMode.RAW;
+                lexerModeModifier = -1;
+            }
 
             switch (lexerMode)
             {
