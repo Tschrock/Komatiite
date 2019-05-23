@@ -394,6 +394,26 @@ namespace Komatiite.Tests
         }
 
         [NiceTheory]
+        [InlineData("{{ \"\" }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
+        [InlineData("{% \"\" %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
+        [InlineData("{[ \"\" ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
+        public void Lexer_Should_Lex_Empty_Double_Quoted_String(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
+        {
+            var lexer = new Lexer(testString);
+
+            var tokens = lexer.ToList();
+
+            Assert.Collection(
+                tokens,
+                token => Assert.Equal(expectedStartToken, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_START, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_END, token.TokenType),
+                token => Assert.Equal(expectedEndToken, token.TokenType),
+                token => Assert.Equal(TokenType.EOF, token.TokenType)
+            );
+        }
+
+        [NiceTheory]
         [InlineData("{{ 'test' }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
         [InlineData("{% 'test' %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
         [InlineData("{[ 'test' ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
@@ -415,9 +435,32 @@ namespace Komatiite.Tests
         }
 
         [NiceTheory]
+        [InlineData("{{ '' }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
+        [InlineData("{% '' %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
+        [InlineData("{[ '' ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
+        public void Lexer_Should_Lex_Empty_Single_Quoted_String(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
+        {
+            var lexer = new Lexer(testString);
+
+            var tokens = lexer.ToList();
+
+            Assert.Collection(
+                tokens,
+                token => Assert.Equal(expectedStartToken, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_START, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_END, token.TokenType),
+                token => Assert.Equal(expectedEndToken, token.TokenType),
+                token => Assert.Equal(TokenType.EOF, token.TokenType)
+            );
+        }
+
+        [NiceTheory]
         [InlineData("{{ \"te\\\"st\" }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
         [InlineData("{% \"te\\\"st\" %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
         [InlineData("{[ \"te\\\"st\" ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
+        [InlineData("{{ \"\\\"\" }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
+        [InlineData("{% \"\\\"\" %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
+        [InlineData("{[ \"\\\"\" ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
         public void Lexer_Should_Lex_Double_Quoted_String_With_Escaped_Quote(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
@@ -436,9 +479,12 @@ namespace Komatiite.Tests
         }
 
         [NiceTheory]
-        [InlineData("{{ 'te\\'st' }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
-        [InlineData("{% 'te\\'st' %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
-        [InlineData("{[ 'te\\'st' ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
+        [InlineData(@"{{ 'te\'st' }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
+        [InlineData(@"{% 'te\'st' %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
+        [InlineData(@"{[ 'te\'st' ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
+        [InlineData(@"{{ '\'' }}", TokenType.LAVA_VARIABLE_ENTER, TokenType.LAVA_VARIABLE_EXIT)]
+        [InlineData(@"{% '\'' %}", TokenType.LAVA_TAG_ENTER, TokenType.LAVA_TAG_EXIT)]
+        [InlineData(@"{[ '\'' ]}", TokenType.LAVA_SHORTCODE_ENTER, TokenType.LAVA_SHORTCODE_EXIT)]
         public void Lexer_Should_Lex_Single_Quoted_String_With_Escaped_Quote(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
@@ -452,6 +498,75 @@ namespace Komatiite.Tests
                 token => Assert.Equal(TokenType.RAW_TEXT, token.TokenType),
                 token => Assert.Equal(TokenType.STRING_END, token.TokenType),
                 token => Assert.Equal(expectedEndToken, token.TokenType),
+                token => Assert.Equal(TokenType.EOF, token.TokenType)
+            );
+        }
+
+        [NiceTheory]
+        [InlineData("{[ '{{ test }}' ]}")]
+        [InlineData("{[ \"{{ test }}\" ]}")]
+        public void Lexer_Should_Lex_Interpolated_String_1(string testString)
+        {
+            var lexer = new Lexer(testString);
+
+            var tokens = lexer.ToList();
+
+            Assert.Collection(
+                tokens,
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_START, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.IDENTIFIER, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_EXIT, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_END, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_EXIT, token.TokenType),
+                token => Assert.Equal(TokenType.EOF, token.TokenType)
+            );
+        }
+
+        [NiceTheory]
+        [InlineData("{[ 'hello {{ test }}' ]}")]
+        [InlineData("{[ \"hello {{ test }}\" ]}")]
+        public void Lexer_Should_Lex_Interpolated_String_2(string testString)
+        {
+            var lexer = new Lexer(testString);
+
+            var tokens = lexer.ToList();
+
+            Assert.Collection(
+                tokens,
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_START, token.TokenType),
+                token => Assert.Equal(TokenType.RAW_TEXT, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.IDENTIFIER, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_EXIT, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_END, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_EXIT, token.TokenType),
+                token => Assert.Equal(TokenType.EOF, token.TokenType)
+            );
+        }
+
+        [NiceTheory]
+        [InlineData("{[ 'hello {{ test }} world' ]}")]
+        [InlineData("{[ \"hello {{ test }} world\" ]}")]
+        public void Lexer_Should_Lex_Interpolated_String_3(string testString)
+        {
+            var lexer = new Lexer(testString);
+
+            var tokens = lexer.ToList();
+
+            Assert.Collection(
+                tokens,
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_START, token.TokenType),
+                token => Assert.Equal(TokenType.RAW_TEXT, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_ENTER, token.TokenType),
+                token => Assert.Equal(TokenType.IDENTIFIER, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_VARIABLE_EXIT, token.TokenType),
+                token => Assert.Equal(TokenType.RAW_TEXT, token.TokenType),
+                token => Assert.Equal(TokenType.STRING_END, token.TokenType),
+                token => Assert.Equal(TokenType.LAVA_SHORTCODE_EXIT, token.TokenType),
                 token => Assert.Equal(TokenType.EOF, token.TokenType)
             );
         }

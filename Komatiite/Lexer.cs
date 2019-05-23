@@ -389,9 +389,6 @@ namespace Komatiite
         private void ReadStringContent(int quote)
         {
 
-            // Check for EOF
-            if (TryReadEOF()) return;
-
             // Get the current character
             var c = reader.CurrentCharacter;
 
@@ -410,15 +407,18 @@ namespace Komatiite
 
             }
 
+            if (lexerMode == LexerMode.LAVA_SHORTCODE)
+            {
+                lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_INTERPOLATED_STRING, quote));
+                return;
+            }
+
             // Start a RAW_TEXT token
             var rawToken = AddToken(TokenType.RAW_TEXT);
 
             // Loop until we hit the end quote or EOF
             while (true)
             {
-
-                // Get the next character
-                c = reader.NextCharacter();
 
                 // If it's a backslash
                 if (c == '\\')
@@ -457,6 +457,9 @@ namespace Komatiite
 
                 }
 
+                // Get the next character
+                c = reader.NextCharacter();
+
             }
 
         }
@@ -474,7 +477,7 @@ namespace Komatiite
             int c = reader.CurrentCharacter;
             int c2;
 
-            
+
             // Check for end tags
             if (lexerMode == LexerMode.LAVA_VARIABLE && c == '}')
             {
@@ -797,6 +800,50 @@ namespace Komatiite
 
         }
 
+        private void ReadInterpolated() {
+            
+            // Check for the end of the string
+            if(reader.CurrentCharacter == lexerModeModifier) {
+                AddTokenAndNext(TokenType.STRING_END, 1);
+                this.lexerModeStack.Pop();
+                return;
+            }
+
+            // Check for a lava token or EOF
+            if (TryReadLavaStartOrEOF()) return;
+
+            // Start a RAW_TEXT token
+            var rawToken = AddToken(TokenType.RAW_TEXT);
+
+            // Loop forward until we find a lava or EOF token
+            while (true)
+            {
+                // Check for an escaped character
+                if(reader.CurrentCharacter == '\\') {
+                    reader.NextCharacter();
+                    reader.NextCharacter();
+                }
+
+
+                // Check for the end of the string
+                if(reader.CurrentCharacter == lexerModeModifier) {
+                    AddTokenAndNext(TokenType.STRING_END, 1);
+                    this.lexerModeStack.Pop();
+                    return;
+                }
+
+                // Check for a lava token or EOF
+                if (TryReadLavaStartOrEOF()) return;
+
+                // Add the character to the raw text token
+                rawToken.EndPosition.BumpForChar(reader.CurrentCharacter);
+
+                // Consume the character
+                reader.NextCharacter();
+
+            }
+        }
+
         private bool ShiftTokenStack()
         {
             if (this.nextTokens.Count > 0)
@@ -819,7 +866,7 @@ namespace Komatiite
             if (lexerModeStack.Count > 0)
             {
                 var kv = lexerModeStack.Peek();
-                lexerMode =  kv.Key;
+                lexerMode = kv.Key;
                 lexerModeModifier = kv.Value;
             }
             else
@@ -837,6 +884,9 @@ namespace Komatiite
                 case LexerMode.LAVA_TAG:
                 case LexerMode.LAVA_SHORTCODE:
                     ReadLava();
+                    break;
+                case LexerMode.LAVA_INTERPOLATED_STRING:
+                    ReadInterpolated();
                     break;
                 default:
                     ReadRaw();
