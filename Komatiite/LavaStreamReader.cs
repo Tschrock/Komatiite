@@ -11,7 +11,7 @@ namespace Komatiite
 
         private StreamReader inputReader;
 
-        private StringBuilder sourceStringBuilder;
+        private StringBuilder sourceStringBuilder = new StringBuilder();
 
         private string sourceString;
 
