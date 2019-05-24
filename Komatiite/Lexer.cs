@@ -355,455 +355,296 @@ namespace Komatiite
 
         }
 
-        private bool TryMatch(char[] text, out CharacterPosition startPosition, out CharacterPosition endPosition)
-        {
-            // Loop through each character
-            for (var i = 0; i < text.Length; i++)
-            {
-
-                // Check for a match
-                if (reader.PeekCharacter(i) != text[i])
-                {
-                    startPosition = CharacterPosition.Empty;
-                    endPosition = CharacterPosition.Empty;
-                    return false;
-                }
-
-            }
-
-            // Record the start position
-            startPosition = reader.CurrentPosition.Clone();
-
-            // Consume all but the last matched characters
-            for (var i = 1; i < text.Length; i++) reader.NextCharacter();
-
-            // Record the start position
-            endPosition = reader.CurrentPosition.Clone();
-
-            // Consume the last matched character
-            reader.NextCharacter();
-
-            return true;
-        }
-
         private void ReadStringContent(int quote)
         {
 
-            // Get the current character
-            var c = reader.CurrentCharacter;
-
-            // If we already have a quote
-            if (c == quote)
-            {
-
-                // Add an end token
-                AddToken(TokenType.STRING_END);
-
-                // Consume the character
-                reader.NextCharacter();
-
-                // return
-                return;
-
-            }
-
-            if (lexerMode == LexerMode.LAVA_SHORTCODE)
-            {
-                lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_INTERPOLATED_STRING, quote));
-                return;
-            }
-
-            // Start a RAW_TEXT token
-            var rawToken = AddToken(TokenType.RAW_TEXT);
-
-            // Loop until we hit the end quote or EOF
+            int c = reader.CurrentCharacter;
+            var stringStart = reader.CurrentPosition.Clone();
+            var stringEnd = reader.CurrentPosition.Clone();
             while (true)
             {
-
-                // If it's a backslash
-                if (c == '\\')
+                switch (c)
                 {
+                    // EOF
+                    case -1:
 
-                    // Skip the backslash
-                    reader.NextCharacter();
+                        // If we collected any text, add it
+                        if (stringStart.Index < stringEnd.Index) AddToken(TokenType.RAW_TEXT, stringStart, stringEnd);
 
-                    // Skip the next character
-                    c = reader.NextCharacter();
+                        // Add an EOF
+                        AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty);
 
+                        return;
+
+                    // Escape
+                    case '\\':
+
+                        // Skip the backslash character
+                        stringEnd.BumpForChar(reader.NextCharacter());
+
+                        // Skip the escaped character
+                        stringEnd.BumpForChar(c = reader.NextCharacter());
+
+                        break;
+
+                    // Other
+                    default:
+
+                        // Check for the end quote
+                        if (c == quote)
+                        {
+                            // If we collected any text, add it
+                            if (stringStart.Index < stringEnd.Index) AddToken(TokenType.RAW_TEXT, stringStart, stringEnd);
+
+                            // Add a String End
+                            AddTokenAndNext(TokenType.STRING_END, 1);
+
+                            return;
+                        }
+
+                        // Move to the next character
+                        stringEnd.BumpForChar(c = reader.NextCharacter());
+
+                        break;
                 }
-
-                // Check for EOF
-                if (TryReadEOF()) return;
-
-                // Check for the end quote
-                if (c == quote)
-                {
-
-                    // Add an end token
-                    AddToken(TokenType.STRING_END);
-
-                    // Consume the character
-                    reader.NextCharacter();
-
-                    // return
-                    return;
-
-                }
-                else
-                {
-
-                    // Add the character to the raw text token
-                    rawToken.EndPosition.BumpForChar(reader.CurrentCharacter);
-
-                }
-
-                // Get the next character
-                c = reader.NextCharacter();
-
             }
 
+        }
+
+        private void pushMode(LexerMode mode, int modifier)
+        {
+            lexerModeStack.Push(new KeyValuePair<LexerMode, int>(mode, modifier));
         }
 
         private void ReadLava()
         {
-            TryReadLava(true);
-        }
-
-        private bool TryReadLava(bool fallback)
-        {
-
-            SkipWhitespace();
 
             int c = reader.CurrentCharacter;
-            int c2;
-
-
-            // Check for end tags
-            if (lexerMode == LexerMode.LAVA_VARIABLE && c == '}')
+            int c2 = -1;
+            Token fallbackToken = null;
+            while (true)
             {
 
-                c2 = reader.PeekCharacter(1);
-                if (c2 == '}')
+                switch (c)
                 {
-                    lexerModeStack.Pop();
-                    AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
-                    return true;
-                }
-
-            }
-            else if (lexerMode == LexerMode.LAVA_TAG && c == '%')
-            {
-
-                c2 = reader.PeekCharacter(1);
-                if (c2 == '}')
-                {
-                    lexerModeStack.Pop();
-                    AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
-                    return true;
-                }
-
-            }
-            else if (lexerMode == LexerMode.LAVA_SHORTCODE && c == ']')
-            {
-
-                c2 = reader.PeekCharacter(1);
-                if (c2 == '}')
-                {
-                    lexerModeStack.Pop();
-                    AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
-                    return true;
-                }
-
-            }
-
-
-            // Try to match specific characters with a case
-            switch (c)
-            {
-                case -1: AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty); return true;
-                case '[': AddTokenAndNext(TokenType.LEFT_SQUARE_BRACKET); return true;
-                case ']': AddTokenAndNext(TokenType.RIGHT_SQUARE_BRACKET); return true;
-                case '(': AddTokenAndNext(TokenType.LEFT_PARENTHESES); return true;
-                case ')': AddTokenAndNext(TokenType.RIGHT_PARENTHESES); return true;
-                case ':': AddTokenAndNext(TokenType.COLON); return true;
-                case '|': AddTokenAndNext(TokenType.PIPE); return true;
-                case '"': AddTokenAndNext(TokenType.STRING_START); ReadStringContent('"'); return true;
-                case '\'': AddTokenAndNext(TokenType.STRING_START); ReadStringContent('\''); return true;
-                case '<':
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '=') AddTokenAndNext(TokenType.LESS_THAN_OR_EQUAL, 2);
-                    else AddTokenAndNext(TokenType.LESS_THAN);
-
-                    return true;
-                case '>':
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '=') AddTokenAndNext(TokenType.GREATER_THAN_OR_EQUAL, 2);
-                    else AddTokenAndNext(TokenType.GREATER_THAN);
-
-                    return true;
-                case '=':
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '=') AddTokenAndNext(TokenType.EQUALS, 2);
-                    else AddTokenAndNext(TokenType.ASSIGNMENT);
-
-                    return true;
-                case '!':
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '=')
-                    {
-                        AddTokenAndNext(TokenType.EQUALS, 2);
-                        return true;
-                    }
-
-                    break;
-                case '.':
-
-                    // This could be:
-                    // - A range (..)
-                    // - A decimal (.932)
-                    // - An identifier (.something) or (.4things)
-
-                    c2 = reader.PeekCharacter(1);
-                    if (c2 == '.')
-                    {
-                        AddTokenAndNext(TokenType.RANGE, 2);
-                        return true;
-                    }
-                    else if (previousToken != null && (previousToken.TokenType == TokenType.IDENTIFIER || previousToken.TokenType == TokenType.RIGHT_SQUARE_BRACKET))
-                    {
-                        AddTokenAndNext(TokenType.DOT, 1);
-                        return true;
-                    }
-                    else if (IsDigit(c2))
-                    {
-
-                        // Start the token
-                        var decimalToken = AddToken(TokenType.DECIMAL);
-
-                        // Consume the dot
-                        reader.NextCharacter();
-
-                        // Consume the digit and get the next character
-                        decimalToken.EndPosition.Index++;
-                        var cx = reader.NextCharacter();
-
-                        // Continue consuming characters untill we find one that isn't a digit
-                        while (IsDigit(cx))
+                    case ']':
+                        if (lexerMode == LexerMode.LAVA_SHORTCODE)
                         {
-                            decimalToken.EndPosition.Index++;
-                            cx = reader.NextCharacter();
+                            c2 = reader.PeekCharacter(1);
+                            if (c2 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
+                                return;
+                            }
+                        }
+                        AddTokenAndNext(TokenType.RIGHT_SQUARE_BRACKET);
+                        return;
+                    case '%':
+                        if (lexerMode == LexerMode.LAVA_TAG)
+                        {
+                            c2 = reader.PeekCharacter(1);
+                            if (c2 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
+                                return;
+                            }
+                        }
+                        goto default;
+                    case '}':
+                        if (lexerMode == LexerMode.LAVA_VARIABLE)
+                        {
+                            c2 = reader.PeekCharacter(1);
+                            if (c2 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
+                                return;
+                            }
+                        }
+                        goto default;
+                    case ' ':
+                    case '\t':
+                    case '\r':
+                    case '\n':
+                        c = reader.NextCharacter();
+                        break;
+                    case -1: AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty); return;
+                    case '[': AddTokenAndNext(TokenType.LEFT_SQUARE_BRACKET); return;
+                    case '(': AddTokenAndNext(TokenType.LEFT_PARENTHESES); return;
+                    case ')': AddTokenAndNext(TokenType.RIGHT_PARENTHESES); return;
+                    case ':': AddTokenAndNext(TokenType.COLON); return;
+                    case '|': AddTokenAndNext(TokenType.PIPE); return;
+                    case '"':
+                    case '\'':
+
+                        AddTokenAndNext(TokenType.STRING_START);
+                    
+                        if (lexerMode == LexerMode.LAVA_SHORTCODE) pushMode(LexerMode.LAVA_INTERPOLATED_STRING, c);
+                        else ReadStringContent(c);
+
+                        return;
+                    case '<':
+
+                        c2 = reader.PeekCharacter(1);
+                        if (c2 == '=') AddTokenAndNext(TokenType.LESS_THAN_OR_EQUAL, 2);
+                        else AddTokenAndNext(TokenType.LESS_THAN);
+
+                        return;
+                    case '>':
+
+                        c2 = reader.PeekCharacter(1);
+                        if (c2 == '=') AddTokenAndNext(TokenType.GREATER_THAN_OR_EQUAL, 2);
+                        else AddTokenAndNext(TokenType.GREATER_THAN);
+
+                        return;
+                    case '=':
+
+                        c2 = reader.PeekCharacter(1);
+                        if (c2 == '=') AddTokenAndNext(TokenType.EQUALS, 2);
+                        else AddTokenAndNext(TokenType.ASSIGNMENT);
+
+                        return;
+                    case '!':
+
+                        c2 = reader.PeekCharacter(1);
+                        if (c2 == '=')
+                        {
+                            AddTokenAndNext(TokenType.NOT_EQUAL, 2);
+                            return;
                         }
 
-                        return true;
+                        goto default;
+                    case '.':
+                        c2 = reader.PeekCharacter(1);
 
-                    }
-                    else
-                    {
-                        AddTokenAndNext(TokenType.DOT, 1);
-                        return true;
-                    }
+                        if (c2 == '.') AddTokenAndNext(TokenType.RANGE, 2);
+                        else if (IsDigit(c2)) ReadNumber();
+                        else AddTokenAndNext(TokenType.DOT);
 
-                case '-':
+                        return;
+                    case '-':
+                        c2 = reader.PeekCharacter(1);
 
-                    c2 = reader.PeekCharacter(1);
-                    if (lexerMode == LexerMode.LAVA_VARIABLE && c2 == '}')
-                    {
-
-                        var c3 = reader.PeekCharacter(2);
-                        if (c3 == '}')
+                        if (lexerMode == LexerMode.LAVA_VARIABLE && c2 == '}')
                         {
-                            lexerModeStack.Pop();
-                            AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                            AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
-                            return true;
+                            var c3 = reader.PeekCharacter(2);
+                            if (c3 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+                                AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
+                                return;
+                            }
+                        }
+                        else if (lexerMode == LexerMode.LAVA_TAG && c2 == '%')
+                        {
+                            var c3 = reader.PeekCharacter(2);
+                            if (c3 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+                                AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
+                                return;
+                            }
+                        }
+                        else if (lexerMode == LexerMode.LAVA_SHORTCODE && c2 == ']')
+                        {
+                            var c3 = reader.PeekCharacter(2);
+                            if (c3 == '}')
+                            {
+                                lexerModeStack.Pop();
+                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+                                AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
+                                return;
+                            }
+                        }
+                        else if (IsDigit(c2) || c2 == '.')
+                        {
+                            ReadNumber();
+                        }
+                        else
+                        {
+                            AddTokenAndNext(TokenType.DOT);
+                        }
+
+                        return;
+                    default:
+                        if (IsDigit(c))
+                        {
+                            ReadNumber();
+                            return;
+                        }
+                        else if (IsIdentifierChar(c))
+                        {
+                            var token = AddToken(TokenType.IDENTIFIER);
+                            c = reader.NextCharacter();
+                            while (IsIdentifierChar(c))
+                            {
+                                token.EndPosition.BumpColumn();
+                                c = reader.NextCharacter();
+                            }
+                            return;
+                        }
+                        else if (fallbackToken == null)
+                        {
+                            fallbackToken = AddToken(TokenType.RAW_TEXT);
+                        }
+                        else {
+                            fallbackToken.EndPosition.BumpForChar(c);
+                            c = reader.NextCharacter();
                         }
 
                         break;
-
-                    }
-                    else if (lexerMode == LexerMode.LAVA_TAG && c2 == '%')
-                    {
-
-                        var c3 = reader.PeekCharacter(2);
-                        if (c3 == '}')
-                        {
-                            lexerModeStack.Pop();
-                            AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                            AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
-                            return true;
-                        }
-
-                        break;
-
-                    }
-                    else if (lexerMode == LexerMode.LAVA_SHORTCODE && c2 == ']')
-                    {
-
-                        var c3 = reader.PeekCharacter(2);
-                        if (c3 == '}')
-                        {
-                            lexerModeStack.Pop();
-                            AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                            AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
-                            return true;
-                        }
-
-                        break;
-
-                    }
-                    else if (IsDigit(c2))
-                    {
-
-                        // Start the token
-                        var numberToken = AddToken(TokenType.INTEGER);
-
-                        // Consume the minus sign
-                        reader.NextCharacter();
-
-                        // Consume the digit and get the next character
-                        numberToken.EndPosition.Index++;
-                        var cx = reader.NextCharacter();
-
-                        // Continue consuming characters untill we find one that isn't a digit
-                        while (IsDigit(cx))
-                        {
-                            numberToken.EndPosition.Index++;
-                            cx = reader.NextCharacter();
-                        }
-
-                        // If the non-digit is a '.', then it's a decimal 
-                        if (cx == '.')
-                        {
-                            numberToken.TokenType = TokenType.DECIMAL;
-                            numberToken.EndPosition.Index++;
-                            cx = reader.NextCharacter();
-                        }
-
-                        // Continue consuming characters untill we find one that isn't a digit
-                        while (IsDigit(cx))
-                        {
-                            numberToken.EndPosition.Index++;
-                            cx = reader.NextCharacter();
-                        }
-
-                        return true;
-
-                    }
-                    else if (c2 == '.')
-                    {
-
-                        // Start the token
-                        var numberToken = AddToken(TokenType.DECIMAL);
-
-                        // Consume the minus sign
-                        reader.NextCharacter();
-
-                        // Consume the dot and get the next character
-                        numberToken.EndPosition.Index++;
-                        var cx = reader.NextCharacter();
-
-                        // Continue consuming characters untill we find one that isn't a digit
-                        while (IsDigit(cx))
-                        {
-                            numberToken.EndPosition.Index++;
-                            cx = reader.NextCharacter();
-                        }
-
-                        return true;
-
-                    }
-
-                    break;
-            }
-
-            // More advanced checks
-            if (IsDigit(c))
-            {
-
-                // Start the token
-                var numberToken = AddToken(TokenType.INTEGER);
-
-                // Consume the digit and get the next character
-                var cx = reader.NextCharacter();
-
-                // Continue consuming characters untill we find one that isn't a digit
-                while (IsDigit(cx))
-                {
-                    numberToken.EndPosition.Index++;
-                    cx = reader.NextCharacter();
                 }
-
-                // If the non-digit is a '.', then it's a decimal 
-                if (cx == '.')
-                {
-                    numberToken.TokenType = TokenType.DECIMAL;
-                    numberToken.EndPosition.Index++;
-                    cx = reader.NextCharacter();
-                }
-
-                // Continue consuming characters untill we find one that isn't a digit
-                while (IsDigit(cx))
-                {
-                    numberToken.EndPosition.Index++;
-                    cx = reader.NextCharacter();
-                }
-
-                return true;
-
 
             }
-            else if (IsIdentifierChar(c))
-            {
-
-                // Start the token
-                var numberToken = AddToken(TokenType.IDENTIFIER);
-
-                // Consume the first character and get the next character
-                var cx = reader.NextCharacter();
-
-                // Continue consuming characters untill we find one that isn't valid for an identifier
-                while (IsIdentifierChar(cx))
-                {
-                    numberToken.EndPosition.Index++;
-                    cx = reader.NextCharacter();
-                }
-
-                return true;
-
-            }
-            else if (fallback)
-            {
-                // Fallback to building a RAW token
-
-                // Start the token
-                var numberToken = AddToken(TokenType.RAW_TEXT);
-
-                // Consume the character and get the next character
-                var cx = reader.NextCharacter();
-
-                // Continue consuming characters untill we find one that isn't a digit
-                while (!TryReadLava(false))
-                {
-                    numberToken.EndPosition.Index++;
-                    cx = reader.NextCharacter();
-                }
-
-                return true;
-
-            }
-
-            return false;
 
         }
 
-        private void ReadInterpolated() {
-            
+        private void ReadNumber()
+        {
+            var c = reader.CurrentCharacter;
+            var token = AddToken(TokenType.INTEGER);
+
+            // Possible negative sign
+            if (c == '-')
+            {
+                token.EndPosition.Index++;
+                c = reader.NextCharacter();
+            }
+
+            // Digits
+            while (IsDigit(c))
+            {
+                token.EndPosition.Index++;
+                c = reader.NextCharacter();
+            }
+
+            // Possible decimal point
+            if (c == '.')
+            {
+                token.TokenType = TokenType.DECIMAL;
+                token.EndPosition.Index++;
+                c = reader.NextCharacter();
+            }
+
+            // Digits
+            while (IsDigit(c))
+            {
+                token.EndPosition.Index++;
+                c = reader.NextCharacter();
+            }
+
+        }
+        
+        private void ReadInterpolated()
+        {
+
             // Check for the end of the string
-            if(reader.CurrentCharacter == lexerModeModifier) {
+            if (reader.CurrentCharacter == lexerModeModifier)
+            {
                 AddTokenAndNext(TokenType.STRING_END, 1);
                 this.lexerModeStack.Pop();
                 return;
@@ -819,14 +660,16 @@ namespace Komatiite
             while (true)
             {
                 // Check for an escaped character
-                if(reader.CurrentCharacter == '\\') {
+                if (reader.CurrentCharacter == '\\')
+                {
                     reader.NextCharacter();
                     reader.NextCharacter();
                 }
 
 
                 // Check for the end of the string
-                if(reader.CurrentCharacter == lexerModeModifier) {
+                if (reader.CurrentCharacter == lexerModeModifier)
+                {
                     AddTokenAndNext(TokenType.STRING_END, 1);
                     this.lexerModeStack.Pop();
                     return;
