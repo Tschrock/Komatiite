@@ -1,3 +1,5 @@
+using System;
+
 namespace Komatiite
 {
 
@@ -16,22 +18,28 @@ namespace Komatiite
 
         public int Index { get; set; }
 
+        private int lastChar = -1;
+
         public void BumpRow()
         {
             this.Column = 0;
             this.Row = this.Row + 1;
         }
 
+        internal void BumpColumn()
+        {
+            this.Column = this.Column + 1;
+            this.Index = this.Index + 1;
+        }
+
         public void BumpForChar(int c)
         {
-            if (c != -1)
+            if (lastChar == '\n')
             {
-                if (c == '\n')
-                {
-                    BumpRow();
-                }
-                Index = Index + 1;
+                BumpRow();
             }
+            BumpColumn();
+            lastChar = c;
         }
 
         public CharacterPosition Clone()
@@ -75,5 +83,5 @@ namespace Komatiite
         }
 
     }
-    
+
 }
