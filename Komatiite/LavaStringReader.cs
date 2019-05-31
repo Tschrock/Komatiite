@@ -26,7 +26,11 @@ namespace Komatiite
         {
             currentIndex = currentIndex + 1;
 
-            if (currentIndex >= inputString.Length) return -1;
+            if (currentIndex >= inputString.Length)
+            {
+                currentPosition.BumpForChar(-1);
+                return -1;
+            }
 
             var c = inputString[currentIndex];
 

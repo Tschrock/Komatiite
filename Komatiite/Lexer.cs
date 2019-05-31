@@ -1,600 +1,632 @@
-
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.CompilerServices;
-using System.Text;
-
-// Lava has 3 basic tag syntaxes:
-// - {{ Variables }}
-// - {% Tags %}
-// - {[ Shortcodes ]}
-//
-// But if you look at the DotLiquid source there's actually 2 more hidden ones,
-// which are only usable if there's no other text:
-// - {{{ Shorthand Literals }}}
-// - {# Shorthand Comments #}
-//
-// We also need special handling for long-form literals/comments, since they may
-//  contain partial tags inside them which would confuse the lexer:
-// - {% comment %} Something {% endcomment %}
-// - {% literal %} Something {% literal %}
-// - {% raw %} Something {% raw %}
-//
-// Lava also has a "-" modifier for trimming whitespace around tags:
-// - {{- Variable -}}
-// - {%- Tag -%}
-// - {[- Shortcode -]}
-// - etc
 
 namespace Komatiite
 {
 
+    /// <summary>
+    /// Lexes input characters into a list of Tokens.
+    /// </summary>
+    /// <typeparam name="Token"></typeparam>
     public class Lexer : IEnumerable<Token>, IEnumerator<Token>
     {
 
+
         #region Fields
 
+        /// <summary>
+        /// The ILavaReader used to read in characters.
+        /// </summary>
         private ILavaReader reader;
 
-        private LexerMode lexerMode;
+        /// <summary>
+        /// A Queue of Tokens that should be returned.
+        /// </summary>
+        private Queue<Token> tokenQueue = new Queue<Token>();
 
-        private int lexerModeModifier;
-
-        private Stack<KeyValuePair<LexerMode, int>> lexerModeStack = new Stack<KeyValuePair<LexerMode, int>>();
-
+        /// <summary>
+        /// The currently returned token.
+        /// </summary>
         private Token currentToken;
 
-        private Token previousToken;
+        /// <summary>
+        /// A Stack of LexerModes.
+        /// </summary>
+        private Stack<LexerMode> lexerModeStack = new Stack<LexerMode>();
 
-        private Queue<Token> nextTokens = new Queue<Token>();
+        /// <summary>
+        /// The current lexer mode.
+        /// </summary>
+        public LexerMode CurrentLexerMode => this.currentLexerMode;
+
+        /// <summary>
+        /// The depth of the current lexer mode.
+        /// </summary>
+        public int CurrentLexerModeDepth => this.lexerModeStack.Count;
+
+        /// <summary>
+        /// The current LexerMode.
+        /// </summary>
+        private LexerMode currentLexerMode;
 
         #endregion
 
 
+        /// <summary>
+        /// Creates a new Lexer that reads tokens from a string.
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
         public Lexer(string input) : this(new LavaStringReader(input)) { }
 
+
+        /// <summary>
+        /// Creates a new Lexer that reads tokens from a Stream.
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
         public Lexer(Stream input) : this(new LavaStreamReader(input)) { }
 
-        public Lexer(ILavaReader lavaReader) => this.reader = lavaReader;
+
+        /// <summary>
+        /// Creates a new Lexer that reads tokens from an ILavaReader.
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public Lexer(ILavaReader input) => this.reader = input;
 
 
-        #region IEnumerable implimentation
 
-        public IEnumerator<Token> GetEnumerator()
-        {
-            this.Reset();
-            return this;
-        }
+        #region Helpers
 
-        IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
-
-        #endregion
-
-
-        #region IEnumerator implimentation
-
-        public Token Current => currentToken;
-
-        object IEnumerator.Current => currentToken;
-
-        public void Reset()
-        {
-            this.currentToken = null;
-            this.nextTokens.Clear();
-        }
-
-        public bool MoveNext()
-        {
-            return ReadNextToken();
-        }
-
-        #endregion
-
-
-        private Token AddToken(TokenType type, CharacterPosition startPosition, CharacterPosition endPosition)
-        {
-            var token = new Token(type, startPosition, endPosition);
-            AddToken(token);
-            return token;
-        }
-
-        private void AddToken(Token newToken)
+        /// <summary>
+        /// Adds a new Token to the Queue of Tokens to return.
+        /// </summary>
+        /// <param name="newToken"></param>
+        /// <returns></returns>
+        private Token AddToken(Token newToken)
         {
             if (this.currentToken == null) this.currentToken = newToken;
-            else this.nextTokens.Enqueue(newToken);
+            else this.tokenQueue.Enqueue(newToken);
+            return newToken;
         }
 
-        private Token AddToken(TokenType type)
+        /// <summary>
+        /// Creates a new Token and adds it to the Queue of Tokens to return.
+        /// </summary>
+        /// <param name="newToken"></param>
+        /// <returns></returns>
+        private Token AddNewToken(TokenType tokenType, CharacterPosition startPosition, int length)
         {
-            return AddToken(type, reader.CurrentPosition.Clone(), reader.CurrentPosition.Clone());
+            return AddToken(new Token(tokenType, startPosition, length));
         }
 
-        private Token AddTokenAndNext(TokenType type)
+        /// <summary>
+        /// Creates a new Token using the current chatacter position, and adds it to the Queue of Tokens to return.
+        /// </summary>
+        /// <param name="newToken"></param>
+        /// <returns></returns>
+        private Token AddNewTokenFromCurrent(TokenType tokenType, int length)
         {
-            var token = AddToken(type, reader.CurrentPosition.Clone(), reader.CurrentPosition.Clone());
-            reader.NextCharacter();
+            var token = AddToken(new Token(tokenType, reader.CurrentPosition.Clone(), length));
+            while (length-- > 0) reader.NextCharacter();
             return token;
         }
 
-        private Token AddTokenAndNext(TokenType type, int tokenLength)
+        /// <summary>
+        /// If the current position has changed, creates a new Token and adds it to the Queue of Tokens to return.
+        /// </summary>
+        /// <param name="newToken"></param>
+        /// <returns></returns>
+        private void AddNewTokenIfNeeded(TokenType tokenType, CharacterPosition startPosition)
         {
-
-            var token = AddToken(type, reader.CurrentPosition.Clone(), reader.CurrentPosition.Clone());
-
-            while (tokenLength-- > 1)
-            {
-                token.EndPosition.BumpForChar(reader.CurrentCharacter);
-                reader.NextCharacter();
-            }
-
-            reader.NextCharacter();
-
-            return token;
-
+            if (startPosition < reader.CurrentPosition) AddToken(new Token(tokenType, startPosition, reader.CurrentPosition - startPosition));
         }
 
-        private void ReadRaw()
+        /// <summary>
+        /// Tries to dequeue a Token.
+        /// </summary>
+        /// <returns></returns>
+        private bool TryDequeueToken()
         {
-
-            // Check for a lava token or EOF
-            if (TryReadLavaStartOrEOF()) return;
-
-            // Start a RAW_TEXT token
-            var rawToken = AddToken(TokenType.RAW_TEXT);
-
-            // Consume the first character
-            reader.NextCharacter();
-
-            // Loop forward until we find a lava or EOF token
-            while (!TryReadLavaStartOrEOF())
+            if (this.tokenQueue.Count > 0)
             {
-                // Add the character to the raw text token
-                rawToken.EndPosition.BumpForChar(reader.CurrentCharacter);
-
-                // Consume the character
-                reader.NextCharacter();
-
-            }
-
-        }
-
-        private bool TryReadEOF()
-        {
-            // Get the current character
-            int c = reader.CurrentCharacter;
-
-            // Check for EOF
-            if (IsEOF(c))
-            {
-
-                // Add the token
-                AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty);
-
-                // Consume the character
-                reader.NextCharacter();
-
-                // return
+                this.currentToken = this.tokenQueue.Dequeue();
                 return true;
-
             }
-
             return false;
-
         }
-        private bool TryReadLavaStartOrEOF()
+
+        /// <summary>
+        /// Pushes a LexerMode onto the LexerMode Stack.
+        /// </summary>
+        /// <param name="lexerMode"></param>
+        private void PushLexerMode(LexerMode lexerMode)
+        {
+            this.lexerModeStack.Push(this.currentLexerMode);
+            this.currentLexerMode = lexerMode;
+        }
+
+        /// <summary>
+        /// Pops a LexerMode off of the top of the LexerMode Stack.
+        /// </summary>
+        private void PopLexerMode()
+        {
+            if (this.lexerModeStack.Count > 0) this.currentLexerMode = this.lexerModeStack.Pop();
+            else this.currentLexerMode = LexerMode.RAW;
+        }
+
+        /// <summary>
+        /// Replaces the LexerMode at the top of the Lexer Mode Stack.
+        /// </summary>
+        /// <param name="lexerMode"></param>
+        private void ReplaceLexerMode(LexerMode lexerMode)
+        {
+            PopLexerMode();
+            PushLexerMode(lexerMode);
+        }
+
+        #endregion
+
+
+
+        #region Token Readers
+
+        /// <summary>
+        /// Reads the next Token from the input.
+        /// </summary>
+        /// <returns></returns>
+        private bool ReadNextToken()
         {
 
-            if (TryReadEOF()) return true;
+            // See if we already have a token we can dequeue and return.
+            if (TryDequeueToken()) return true;
 
-            // Get the current character
-            int c = reader.CurrentCharacter;
+            // Make sure we're not already at EOF
+            if (this.currentToken?.TokenType == TokenType.EOF) return false;
 
-            // Check if it might be lava
-            if (c == '{')
+            // Clear the current token
+            this.currentToken = null;
+
+            // Read the next token using the appropriate method
+            switch (this.currentLexerMode)
             {
-                // Peek ahead
-                int c2 = reader.PeekCharacter(1);
-
-                if (c2 == '{')
-                {
-
-                    // Record the start position
-                    var startPosition = reader.CurrentPosition.Clone();
-
-                    // Consume the first character
-                    reader.NextCharacter();
-
-                    // Check if it's a shorthand literal
-                    int c3 = reader.PeekCharacter(1);
-                    if (c3 == '{')
-                    {
-
-                        // Consume the second character
-                        reader.NextCharacter();
-
-                        // Set the lexer mode
-                        lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTHAND_LITERAL, -1));
-
-                        // Add the token
-                        AddToken(TokenType.LAVA_SHORTHAND_LITERAL_ENTER, startPosition, reader.CurrentPosition.Clone());
-
-                        // Consume the third character
-                        reader.NextCharacter();
-
-                        // Check if there's a whitespace modifier
-                        TryReadWhiteSpaceModifier();
-
-                        // return
-                        return true;
-
-                    }
-                    else
-                    {
-
-                        // Set the lexer mode
-                        lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_VARIABLE, -1));
-
-                        // Add the token
-                        AddToken(TokenType.LAVA_VARIABLE_ENTER, startPosition, reader.CurrentPosition.Clone());
-
-                        // Consume the second character
-                        reader.NextCharacter();
-
-                        // Check if there's a whitespace modifier
-                        TryReadWhiteSpaceModifier();
-
-                        // return
-                        return true;
-
-                    }
-
-                }
-                else if (c2 == '%')
-                {
-
-                    // Record the start position
-                    var startPosition = reader.CurrentPosition.Clone();
-
-                    // Consume the first character
-                    reader.NextCharacter();
-
-                    // Set the lexer mode
-                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_TAG, -1));
-
-                    // Add the token
-                    AddToken(TokenType.LAVA_TAG_ENTER, startPosition, reader.CurrentPosition.Clone());
-
-                    // Consume the second character
-                    reader.NextCharacter();
-
-                    // Check if there's a whitespace modifier
-                    TryReadWhiteSpaceModifier();
-
-                    // return
-                    return true;
-
-                }
-                else if (c2 == '[')
-                {
-
-                    // Record the start position
-                    var startPosition = reader.CurrentPosition.Clone();
-
-                    // Consume the first character
-                    reader.NextCharacter();
-
-                    // Set the lexer mode
-                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTCODE, -1));
-
-                    // Add the token
-                    AddToken(TokenType.LAVA_SHORTCODE_ENTER, startPosition, reader.CurrentPosition.Clone());
-
-                    // Consume the second character
-                    reader.NextCharacter();
-
-                    // Check if there's a whitespace modifier
-                    TryReadWhiteSpaceModifier();
-
-                    // return
-                    return true;
-
-                }
-                else if (c2 == '#')
-                {
-
-                    // Record the start position
-                    var startPosition = reader.CurrentPosition.Clone();
-
-                    // Consume the first character
-                    reader.NextCharacter();
-
-                    // Set the lexer mode
-                    lexerModeStack.Push(new KeyValuePair<LexerMode, int>(LexerMode.LAVA_SHORTHAND_COMMENT, -1));
-
-                    // Add the token
-                    AddToken(TokenType.LAVA_SHORTHAND_COMMENT_ENTER, startPosition, reader.CurrentPosition.Clone());
-
-                    // Consume the second character
-                    reader.NextCharacter();
-
-                    // Check if there's a whitespace modifier
-                    TryReadWhiteSpaceModifier();
-
-                    // return
-                    return true;
-
-                }
-            }
-            return false;
-        }
-
-        private bool TryReadWhiteSpaceModifier()
-        {
-
-            // Check the current character
-            int c = reader.CurrentCharacter;
-            if (c == '-')
-            {
-
-                // Record the start position
-                var startPosition = reader.CurrentPosition.Clone();
-
-                // Add the token
-                AddToken(TokenType.LAVA_TRIM_WHITESPACE_FLAG, startPosition, startPosition);
-
-                // Consume the character
-                reader.NextCharacter();
-
-                return true;
-
+                case LexerMode.RAW: ReadNextToken_Raw(); break;
+                case LexerMode.LAVA_VARIABLE: ReadNextToken_LavaVariable(); break;
+                case LexerMode.LAVA_TAG: ReadNextToken_LavaTag(); break;
+                case LexerMode.LAVA_SHORTCODE: ReadNextToken_LavaShortcode(); break;
+                case LexerMode.LAVA_INTERPOLATED_STRING: ReadNextToken_InterpolatedString(); break;
+                case LexerMode.LAVA_SHORTHAND_COMMENT: ReadNextToken_ShorthandComment(); break;
+                case LexerMode.LAVA_SHORTHAND_LITERAL: ReadNextToken_ShorthandLiteral(); break;
+                default: ReadNextToken_Raw(); break;
             }
 
-            return false;
+            // If we got another token
+            return this.currentToken != null;
 
         }
 
-        private void ReadStringContent(int quote)
+        /// <summary>
+        /// Reads the next Token from the input in RAW mode.
+        /// </summary>
+        private void ReadNextToken_Raw()
         {
 
-            int c = reader.CurrentCharacter;
-            var stringStart = reader.CurrentPosition.Clone();
-            var stringEnd = reader.CurrentPosition.Clone();
+            var rawStart = reader.CurrentPosition.Clone();
+
             while (true)
             {
-                switch (c)
+
+                // Check the current character
+                switch (reader.CurrentCharacter)
                 {
-                    // EOF
                     case -1:
 
-                        // If we collected any text, add it
-                        if (stringStart.Index < stringEnd.Index) AddToken(TokenType.RAW_TEXT, stringStart, stringEnd);
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, rawStart);
 
-                        // Add an EOF
-                        AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty);
+                        // Add a token for the EOF
+                        AddNewTokenFromCurrent(TokenType.EOF, 0);
 
                         return;
 
-                    // Escape
-                    case '\\':
+                    case '{':
 
-                        // Skip the backslash character
-                        stringEnd.BumpForChar(reader.NextCharacter());
-
-                        // Skip the escaped character
-                        stringEnd.BumpForChar(c = reader.NextCharacter());
-
-                        break;
-
-                    // Other
-                    default:
-
-                        // Check for the end quote
-                        if (c == quote)
+                        // Check the next character
+                        switch (reader.PeekCharacter(1))
                         {
-                            // If we collected any text, add it
-                            if (stringStart.Index < stringEnd.Index) AddToken(TokenType.RAW_TEXT, stringStart, stringEnd);
+                            case '{':
 
-                            // Add a String End
-                            AddTokenAndNext(TokenType.STRING_END, 1);
+                                // Check the next next character
+                                if (reader.PeekCharacter(2) == '{')
+                                {
+                                    HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTHAND_LITERAL_ENTER, 3, LexerMode.LAVA_SHORTHAND_LITERAL);
+                                }
+                                else
+                                {
+                                    HandleRawLavaStart(rawStart, TokenType.LAVA_VARIABLE_ENTER, 2, LexerMode.LAVA_VARIABLE);
+                                }
+                                return;
 
-                            return;
+                            case '%':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_TAG_ENTER, 2, LexerMode.LAVA_TAG);
+                                return;
+
+                            case '[':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTCODE_ENTER, 2, LexerMode.LAVA_SHORTCODE);
+                                return;
+
+                            case '#':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTHAND_COMMENT_ENTER, 2, LexerMode.LAVA_SHORTHAND_COMMENT);
+                                return;
+
                         }
-
-                        // Move to the next character
-                        stringEnd.BumpForChar(c = reader.NextCharacter());
-
                         break;
+
                 }
+
+                // If we didn't get a match, move on to the next character
+                reader.NextCharacter();
+
             }
 
+
         }
 
-        private void pushMode(LexerMode mode, int modifier)
+        /// <summary>
+        /// Handles lava start tokens when ReadNextToken_Raw finds one.
+        /// </summary>
+        /// <param name="rawStart">The start position of the raw text.</param>
+        /// <param name="tokenType">The type of the start token.</param>
+        /// <param name="tokenSize">The size of the start token.</param>
+        /// <param name="newLexerMode">The lexer mode to switch to for reading the lava.</param>
+        private void HandleRawLavaStart(CharacterPosition rawStart, TokenType tokenType, int tokenSize, LexerMode newLexerMode)
         {
-            lexerModeStack.Push(new KeyValuePair<LexerMode, int>(mode, modifier));
+
+            // Add a token for the raw text if needed
+            AddNewTokenIfNeeded(TokenType.RAW_TEXT, rawStart);
+
+            // Add a token for the lava start
+            AddNewTokenFromCurrent(tokenType, tokenSize);
+
+            // Check for a whitespace modifier
+            if (reader.CurrentCharacter == '-')
+            {
+                // Add the token
+                AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+            }
+
+            // Update the lexer mode
+            PushLexerMode(newLexerMode);
+
         }
 
-        private void ReadLava()
+        /// <summary>
+        /// Reads the next Token from the input in LAVA_VARIABLE mode.
+        /// </summary>
+        private void ReadNextToken_LavaVariable()
+        {
+            ReadNextGenericLavaToken();
+        }
+
+        /// <summary>
+        /// Reads the next Token from the input in LAVA_TAG mode.
+        /// </summary>
+        private void ReadNextToken_LavaTag()
+        {
+            ReadNextGenericLavaToken();
+        }
+
+        /// <summary>
+        /// Reads the next Token from the input in LAVA_SHORTCODE mode.
+        /// </summary>
+        private void ReadNextToken_LavaShortcode()
+        {
+            ReadNextGenericLavaToken();
+        }
+
+        /// <summary>
+        /// Reads the next lava Token from the input.
+        /// </summary>
+        private void ReadNextGenericLavaToken()
         {
 
-            int c = reader.CurrentCharacter;
-            int c2 = -1;
+            // The fallback token will be used if we can't find any character matches
             Token fallbackToken = null;
+
             while (true)
             {
+                var c = reader.CurrentCharacter;
 
+                // Check the current character
                 switch (c)
                 {
-                    case ']':
-                        if (lexerMode == LexerMode.LAVA_SHORTCODE)
-                        {
-                            c2 = reader.PeekCharacter(1);
-                            if (c2 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
-                                return;
-                            }
-                        }
-                        AddTokenAndNext(TokenType.RIGHT_SQUARE_BRACKET);
-                        return;
-                    case '%':
-                        if (lexerMode == LexerMode.LAVA_TAG)
-                        {
-                            c2 = reader.PeekCharacter(1);
-                            if (c2 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
-                                return;
-                            }
-                        }
-                        goto default;
-                    case '}':
-                        if (lexerMode == LexerMode.LAVA_VARIABLE)
-                        {
-                            c2 = reader.PeekCharacter(1);
-                            if (c2 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
-                                return;
-                            }
-                        }
-                        goto default;
+                    case -1: AddNewTokenFromCurrent(TokenType.EOF, 0); return;
                     case ' ':
                     case '\t':
                     case '\r':
-                    case '\n':
-                        c = reader.NextCharacter();
-                        break;
-                    case -1: AddToken(TokenType.EOF, CharacterPosition.Empty, CharacterPosition.Empty); return;
-                    case '[': AddTokenAndNext(TokenType.LEFT_SQUARE_BRACKET); return;
-                    case '(': AddTokenAndNext(TokenType.LEFT_PARENTHESES); return;
-                    case ')': AddTokenAndNext(TokenType.RIGHT_PARENTHESES); return;
-                    case ':': AddTokenAndNext(TokenType.COLON); return;
-                    case '|': AddTokenAndNext(TokenType.PIPE); return;
+                    case '\n': reader.NextCharacter(); break;
+                    case '[': AddNewTokenFromCurrent(TokenType.LEFT_SQUARE_BRACKET, 1); return;
+                    case '(': AddNewTokenFromCurrent(TokenType.LEFT_PARENTHESES, 1); return;
+                    case ')': AddNewTokenFromCurrent(TokenType.RIGHT_PARENTHESES, 1); return;
+                    case ':': AddNewTokenFromCurrent(TokenType.COLON, 1); return;
+                    case '|': AddNewTokenFromCurrent(TokenType.PIPE, 1); return;
                     case '"':
+
+                        // Add the string start
+                        AddNewTokenFromCurrent(TokenType.STRING_START, 1);
+
+                        // Read the string contents
+                        ReadStringContent('"');
+
+                        return;
+
                     case '\'':
 
-                        AddTokenAndNext(TokenType.STRING_START);
-                    
-                        if (lexerMode == LexerMode.LAVA_SHORTCODE) pushMode(LexerMode.LAVA_INTERPOLATED_STRING, c);
-                        else ReadStringContent(c);
+                        // Add the string start
+                        AddNewTokenFromCurrent(TokenType.STRING_START, 1);
+
+                        // Check if we're in a shortcode
+                        if (currentLexerMode == LexerMode.LAVA_SHORTCODE)
+                        {
+                            // Read it as an interpolated string
+                            PushLexerMode(LexerMode.LAVA_INTERPOLATED_STRING);
+                        }
+                        else
+                        {
+                            // Read it as a normal string
+                            ReadStringContent('\'');
+                        }
 
                         return;
+
+                    case ']':
+
+                        // Check for the end of a shortcode
+                        if (currentLexerMode == LexerMode.LAVA_SHORTCODE && reader.PeekCharacter(1) == '}')
+                        {
+
+                            // Add the exit token
+                            AddNewTokenFromCurrent(TokenType.LAVA_SHORTCODE_EXIT, 2);
+
+                            // We're done reading the shortcode, so go back to whatever mode we were in before.
+                            PopLexerMode();
+
+                            return;
+
+                        }
+                        else
+                        {
+
+                            // Add a right bracket token
+                            AddNewTokenFromCurrent(TokenType.RIGHT_SQUARE_BRACKET, 1);
+
+                            return;
+
+                        }
+
+                    case '%':
+
+                        // Check for the end of a tag
+                        if (currentLexerMode == LexerMode.LAVA_TAG && reader.PeekCharacter(1) == '}')
+                        {
+
+                            // Add the exit token
+                            AddNewTokenFromCurrent(TokenType.LAVA_TAG_EXIT, 2);
+
+                            // We're done reading the tag, so go back to whatever mode we were in before.
+                            PopLexerMode();
+
+                            return;
+
+                        }
+
+                        goto default;
+
+                    case '}':
+
+                        // Check for the end of a variable
+                        if (currentLexerMode == LexerMode.LAVA_VARIABLE && reader.PeekCharacter(1) == '}')
+                        {
+
+                            // Add the exit token
+                            AddNewTokenFromCurrent(TokenType.LAVA_VARIABLE_EXIT, 2);
+
+                            // We're done reading the variable, so go back to whatever mode we were in before.
+                            PopLexerMode();
+
+                            return;
+
+                        }
+
+                        goto default;
+
                     case '<':
 
-                        c2 = reader.PeekCharacter(1);
-                        if (c2 == '=') AddTokenAndNext(TokenType.LESS_THAN_OR_EQUAL, 2);
-                        else AddTokenAndNext(TokenType.LESS_THAN);
+                        if (reader.PeekCharacter(1) == '=')
+                        {
+                            AddNewTokenFromCurrent(TokenType.LESS_THAN_OR_EQUAL, 2);
+                        }
+                        else
+                        {
+                            AddNewTokenFromCurrent(TokenType.LESS_THAN, 1);
+                        }
 
                         return;
+
                     case '>':
 
-                        c2 = reader.PeekCharacter(1);
-                        if (c2 == '=') AddTokenAndNext(TokenType.GREATER_THAN_OR_EQUAL, 2);
-                        else AddTokenAndNext(TokenType.GREATER_THAN);
+                        if (reader.PeekCharacter(1) == '=')
+                        {
+                            AddNewTokenFromCurrent(TokenType.GREATER_THAN_OR_EQUAL, 2);
+                        }
+                        else
+                        {
+                            AddNewTokenFromCurrent(TokenType.GREATER_THAN, 1);
+                        }
 
                         return;
+
                     case '=':
 
-                        c2 = reader.PeekCharacter(1);
-                        if (c2 == '=') AddTokenAndNext(TokenType.EQUALS, 2);
-                        else AddTokenAndNext(TokenType.ASSIGNMENT);
+                        if (reader.PeekCharacter(1) == '=')
+                        {
+                            AddNewTokenFromCurrent(TokenType.EQUALS, 2);
+                        }
+                        else
+                        {
+                            AddNewTokenFromCurrent(TokenType.ASSIGNMENT, 1);
+                        }
 
                         return;
+
                     case '!':
 
-                        c2 = reader.PeekCharacter(1);
-                        if (c2 == '=')
+                        if (reader.PeekCharacter(1) == '=')
                         {
-                            AddTokenAndNext(TokenType.NOT_EQUAL, 2);
+                            AddNewTokenFromCurrent(TokenType.NOT_EQUAL, 2);
                             return;
                         }
 
                         goto default;
+
                     case '.':
-                        c2 = reader.PeekCharacter(1);
 
-                        if (c2 == '.') AddTokenAndNext(TokenType.RANGE, 2);
-                        else if (IsDigit(c2)) ReadNumber();
-                        else AddTokenAndNext(TokenType.DOT);
+                        var dotNextChar = reader.PeekCharacter(1);
 
-                        return;
-                    case '-':
-                        c2 = reader.PeekCharacter(1);
-
-                        if (lexerMode == LexerMode.LAVA_VARIABLE && c2 == '}')
+                        if (dotNextChar == '.')
                         {
-                            var c3 = reader.PeekCharacter(2);
-                            if (c3 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                                AddTokenAndNext(TokenType.LAVA_VARIABLE_EXIT, 2);
-                                return;
-                            }
+                            AddNewTokenFromCurrent(TokenType.RANGE, 2);
                         }
-                        else if (lexerMode == LexerMode.LAVA_TAG && c2 == '%')
-                        {
-                            var c3 = reader.PeekCharacter(2);
-                            if (c3 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                                AddTokenAndNext(TokenType.LAVA_TAG_EXIT, 2);
-                                return;
-                            }
-                        }
-                        else if (lexerMode == LexerMode.LAVA_SHORTCODE && c2 == ']')
-                        {
-                            var c3 = reader.PeekCharacter(2);
-                            if (c3 == '}')
-                            {
-                                lexerModeStack.Pop();
-                                AddTokenAndNext(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
-                                AddTokenAndNext(TokenType.LAVA_SHORTCODE_EXIT, 2);
-                                return;
-                            }
-                        }
-                        else if (IsDigit(c2) || c2 == '.')
+                        else if (CharacterUtil.IsDigit(dotNextChar))
                         {
                             ReadNumber();
                         }
                         else
                         {
-                            AddTokenAndNext(TokenType.DOT);
+                            AddNewTokenFromCurrent(TokenType.DOT, 1);
                         }
 
                         return;
+
+                    case '-':
+
+                        var minusNextChar = reader.PeekCharacter(1);
+
+                        switch (currentLexerMode)
+                        {
+                            case LexerMode.LAVA_SHORTCODE:
+
+                                // Check for the end of a shortcode
+                                if (minusNextChar == ']' && reader.PeekCharacter(2) == '}')
+                                {
+
+                                    // Add the whitespace modifier
+                                    AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+                                    // Add the exit token
+                                    AddNewTokenFromCurrent(TokenType.LAVA_SHORTCODE_EXIT, 2);
+
+                                    // We're done reading the shortcode, so go back to whatever mode we were in before.
+                                    PopLexerMode();
+
+                                    return;
+
+                                }
+
+                                goto default;
+
+                            case LexerMode.LAVA_TAG:
+
+                                // Check for the end of a tag
+                                if (minusNextChar == '%' && reader.PeekCharacter(2) == '}')
+                                {
+
+                                    // Add the whitespace modifier
+                                    AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+                                    // Add the exit token
+                                    AddNewTokenFromCurrent(TokenType.LAVA_TAG_EXIT, 2);
+
+                                    // We're done reading the tag, so go back to whatever mode we were in before.
+                                    PopLexerMode();
+
+                                    return;
+
+                                }
+
+                                goto default;
+
+                            case LexerMode.LAVA_VARIABLE:
+
+                                // Check for the end of a variable
+                                if (minusNextChar == '}' && reader.PeekCharacter(2) == '}')
+                                {
+
+                                    // Add the whitespace modifier
+                                    AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+                                    // Add the exit token
+                                    AddNewTokenFromCurrent(TokenType.LAVA_VARIABLE_EXIT, 2);
+
+                                    // We're done reading the tag, so go back to whatever mode we were in before.
+                                    PopLexerMode();
+
+                                    return;
+
+                                }
+
+                                goto default;
+
+                            default:
+
+                                if (CharacterUtil.IsDigit(minusNextChar) || minusNextChar == '.')
+                                {
+                                    ReadNumber();
+                                    return;
+                                }
+
+                                break;
+
+                        }
+
+                        goto default;
+
                     default:
-                        if (IsDigit(c))
+
+                        if (CharacterUtil.IsDigit(c))
                         {
                             ReadNumber();
                             return;
                         }
-                        else if (IsIdentifierChar(c))
+                        else if (CharacterUtil.IsIdentifierStart(c))
                         {
-                            var token = AddToken(TokenType.IDENTIFIER);
-                            c = reader.NextCharacter();
-                            while (IsIdentifierChar(c))
-                            {
-                                token.EndPosition.BumpColumn();
-                                c = reader.NextCharacter();
-                            }
+                            // Start an identifier token
+                            var startPosition = reader.CurrentPosition.Clone();
+
+                            // Consume characters until we get to a non-identifier character
+                            while (CharacterUtil.IsIdentifierPart(reader.NextCharacter())) { }
+
+                            // Add the identifier token
+                            AddNewToken(TokenType.IDENTIFIER, startPosition, reader.CurrentPosition - startPosition);
+
                             return;
+
                         }
+
+                        // If nothing matched, fall back to a raw token
                         else if (fallbackToken == null)
                         {
-                            fallbackToken = AddToken(TokenType.RAW_TEXT);
+                            fallbackToken = AddNewTokenFromCurrent(TokenType.RAW_TEXT, 0);
                         }
-                        else {
-                            fallbackToken.EndPosition.BumpForChar(c);
-                            c = reader.NextCharacter();
+                        else
+                        {
+                            fallbackToken.Length++;
                         }
+
+                        reader.NextCharacter();
 
                         break;
                 }
@@ -603,22 +635,82 @@ namespace Komatiite
 
         }
 
+        /// <summary>
+        /// Reads the contents of a string token.
+        /// </summary>
+        /// <param name="endChar"></param>
+        private void ReadStringContent(int endChar)
+        {
+
+            // Save the start position
+            var startPosition = reader.CurrentPosition.Clone();
+
+            // Check the current character
+            while (true)
+            {
+                switch (reader.CurrentCharacter)
+                {
+                    case -1:
+
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                        // Add a token for the EOF
+                        AddNewTokenFromCurrent(TokenType.EOF, 0);
+
+                        return;
+
+                    case '\\':
+
+                        // Skip the escaped character
+                        reader.NextCharacter();
+                        reader.NextCharacter();
+
+                        break;
+
+                    default:
+
+                        // Check if it's the end of the string
+                        if (reader.CurrentCharacter == endChar)
+                        {
+
+                            // Add a token for the raw text if needed
+                            AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                            // Add a token for the string end
+                            AddNewTokenFromCurrent(TokenType.STRING_END, 1);
+
+                            return;
+
+                        }
+
+                        // If we didn't get a match, move on to the next character
+                        reader.NextCharacter();
+
+                        break;
+
+                }
+
+            }
+
+        }
+
+
         private void ReadNumber()
         {
+
             var c = reader.CurrentCharacter;
-            var token = AddToken(TokenType.INTEGER);
+            var token = AddNewTokenFromCurrent(TokenType.INTEGER, 0);
 
             // Possible negative sign
             if (c == '-')
             {
-                token.EndPosition.Index++;
                 c = reader.NextCharacter();
             }
 
             // Digits
-            while (IsDigit(c))
+            while (CharacterUtil.IsDigit(c))
             {
-                token.EndPosition.Index++;
                 c = reader.NextCharacter();
             }
 
@@ -626,184 +718,307 @@ namespace Komatiite
             if (c == '.')
             {
                 token.TokenType = TokenType.DECIMAL;
-                token.EndPosition.Index++;
                 c = reader.NextCharacter();
             }
 
             // Digits
-            while (IsDigit(c))
+            while (CharacterUtil.IsDigit(c))
             {
-                token.EndPosition.Index++;
                 c = reader.NextCharacter();
             }
 
+            token.Length = reader.CurrentPosition.Index - token.StartPosition.Index;
         }
-        
-        private void ReadInterpolated()
+
+        /// <summary>
+        /// Reads the next Token from the input in INTERPOLATED_STRING mode.
+        /// </summary>
+        private void ReadNextToken_InterpolatedString()
         {
 
-            // Check for the end of the string
-            if (reader.CurrentCharacter == lexerModeModifier)
-            {
-                AddTokenAndNext(TokenType.STRING_END, 1);
-                this.lexerModeStack.Pop();
-                return;
-            }
+            // Save the start position
+            var rawStart = reader.CurrentPosition.Clone();
 
-            // Check for a lava token or EOF
-            if (TryReadLavaStartOrEOF()) return;
-
-            // Start a RAW_TEXT token
-            var rawToken = AddToken(TokenType.RAW_TEXT);
-
-            // Loop forward until we find a lava or EOF token
+            // Check the current character
             while (true)
             {
-                // Check for an escaped character
-                if (reader.CurrentCharacter == '\\')
+                switch (reader.CurrentCharacter)
                 {
-                    reader.NextCharacter();
-                    reader.NextCharacter();
+                    case -1:
+
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, rawStart);
+
+                        // Add a token for the EOF
+                        AddNewTokenFromCurrent(TokenType.EOF, 0);
+
+                        return;
+
+                    case '\\':
+
+                        // Skip the escaped character
+                        reader.NextCharacter();
+                        reader.NextCharacter();
+
+                        break;
+
+                    case '{':
+
+                        // Check the next character
+                        switch (reader.PeekCharacter(1))
+                        {
+                            case '{':
+
+                                // Check the next next character
+                                if (reader.PeekCharacter(2) == '{')
+                                {
+                                    HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTHAND_LITERAL_ENTER, 3, LexerMode.LAVA_SHORTHAND_LITERAL);
+                                }
+                                else
+                                {
+                                    HandleRawLavaStart(rawStart, TokenType.LAVA_VARIABLE_ENTER, 2, LexerMode.LAVA_VARIABLE);
+                                }
+                                return;
+
+                            case '%':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_TAG_ENTER, 2, LexerMode.LAVA_TAG);
+                                return;
+
+                            case '[':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTCODE_ENTER, 2, LexerMode.LAVA_SHORTCODE);
+                                return;
+
+                            case '#':
+                                HandleRawLavaStart(rawStart, TokenType.LAVA_SHORTHAND_COMMENT_ENTER, 2, LexerMode.LAVA_SHORTHAND_COMMENT);
+                                return;
+
+                        }
+
+                        goto default;
+
+                    case '\'':
+
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, rawStart);
+
+                        // Add a token for the string end
+                        AddNewTokenFromCurrent(TokenType.STRING_END, 1);
+                        
+                        // We're done reading the string, so go back to whatever mode we were in before.
+                        PopLexerMode();
+
+                        return;
+
+                    default:
+
+                        // If we didn't get a match, move on to the next character
+                        reader.NextCharacter();
+
+                        break;
+
                 }
 
+            }
 
-                // Check for the end of the string
-                if (reader.CurrentCharacter == lexerModeModifier)
+        }
+
+        /// <summary>
+        /// Reads the next Token from the input in LAVA_SHORTHAND_COMMENT mode.
+        /// </summary>
+        private void ReadNextToken_ShorthandComment()
+        {
+
+            // Save the start position
+            var startPosition = reader.CurrentPosition.Clone();
+
+            // Check the current character
+            while (true)
+            {
+                switch (reader.CurrentCharacter)
                 {
-                    AddTokenAndNext(TokenType.STRING_END, 1);
-                    this.lexerModeStack.Pop();
-                    return;
+                    case -1:
+
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                        // Add a token for the EOF
+                        AddNewTokenFromCurrent(TokenType.EOF, 0);
+
+                        return;
+
+                    case '#':
+
+                        if (reader.PeekCharacter(1) == '}')
+                        {
+
+                            // Add a token for the raw text if needed
+                            AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                            // Add a token for the shorthand comment end
+                            AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_COMMENT_EXIT, 2);
+                        
+                            // We're done reading the shorthand comment, so go back to whatever mode we were in before.
+                            PopLexerMode();
+
+                            return;
+
+                        }
+
+                        goto default;
+
+                    case '-':
+
+                        if (reader.PeekCharacter(1) == '#')
+                        {
+                            if (reader.PeekCharacter(2) == '}')
+                            {
+
+                                // Add a token for the raw text if needed
+                                AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                                // Add a token for the whitespace modifier
+                                AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+                                // Add a token for the shorthand comment end
+                                AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_COMMENT_EXIT, 2);
+                        
+                                // We're done reading the shorthand comment, so go back to whatever mode we were in before.
+                                PopLexerMode();
+
+                                return;
+
+                            }
+                        }
+
+                        goto default;
+
+                    default:
+
+                        // We didn't get a match, move on to the next character
+                        reader.NextCharacter();
+
+                        break;
+
                 }
 
-                // Check for a lava token or EOF
-                if (TryReadLavaStartOrEOF()) return;
-
-                // Add the character to the raw text token
-                rawToken.EndPosition.BumpForChar(reader.CurrentCharacter);
-
-                // Consume the character
-                reader.NextCharacter();
-
             }
         }
 
-        private bool ShiftTokenStack()
+        /// <summary>
+        /// Reads the next Token from the input in LAVA_SHORTHAND_LITERAL mode.
+        /// </summary>
+        private void ReadNextToken_ShorthandLiteral()
         {
-            if (this.nextTokens.Count > 0)
+
+            // Save the start position
+            var startPosition = reader.CurrentPosition.Clone();
+
+            // Check the current character
+            while (true)
             {
-                this.currentToken = this.nextTokens.Dequeue();
-                return true;
+                switch (reader.CurrentCharacter)
+                {
+                    case -1:
+
+                        // Add a token for the raw text if needed
+                        AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                        // Add a token for the EOF
+                        AddNewTokenFromCurrent(TokenType.EOF, 0);
+
+                        return;
+
+                    case '}':
+
+                        if (reader.PeekCharacter(1) == '}')
+                        {
+                            if (reader.PeekCharacter(2) == '}')
+                            {
+
+                                // Add a token for the raw text if needed
+                                AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                                // Add a token for the shorthand comment end
+                                AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_EXIT, 3);
+                        
+                                // We're done reading the shorthand literal, so go back to whatever mode we were in before.
+                                PopLexerMode();
+
+                                return;
+
+                            }
+                        }
+
+                        goto default;
+
+                    case '-':
+
+                        if (reader.PeekCharacter(1) == '}')
+                        {
+                            if (reader.PeekCharacter(2) == '}')
+                            {
+                                if (reader.PeekCharacter(3) == '}')
+                                {
+
+                                    // Add a token for the raw text if needed
+                                    AddNewTokenIfNeeded(TokenType.RAW_TEXT, startPosition);
+
+                                    // Add a token for the whitespace modifier
+                                    AddNewTokenFromCurrent(TokenType.LAVA_TRIM_WHITESPACE_FLAG, 1);
+
+                                    // Add a token for the shorthand comment end
+                                    AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_EXIT, 3);
+                        
+                                    // We're done reading the shorthand literal, so go back to whatever mode we were in before.
+                                    PopLexerMode();
+
+                                    return;
+
+                                }
+                            }
+                        }
+
+                        goto default;
+
+                    default:
+
+                        // We didn't get a match, move on to the next character
+                        reader.NextCharacter();
+
+                        break;
+
+                }
+
             }
-            return false;
         }
 
-        public bool ReadNextToken()
-        {
-            if (this.currentToken != null && this.currentToken.TokenType == TokenType.EOF) return false;
+        #endregion
 
-            this.previousToken = this.currentToken;
-            this.currentToken = null;
 
-            if (ShiftTokenStack()) return true;
 
-            if (lexerModeStack.Count > 0)
-            {
-                var kv = lexerModeStack.Peek();
-                lexerMode = kv.Key;
-                lexerModeModifier = kv.Value;
-            }
-            else
-            {
-                lexerMode = LexerMode.RAW;
-                lexerModeModifier = -1;
-            }
+        #region IEnumerable<Token>
 
-            switch (lexerMode)
-            {
-                case LexerMode.RAW:
-                    ReadRaw();
-                    break;
-                case LexerMode.LAVA_VARIABLE:
-                case LexerMode.LAVA_TAG:
-                case LexerMode.LAVA_SHORTCODE:
-                    ReadLava();
-                    break;
-                case LexerMode.LAVA_INTERPOLATED_STRING:
-                    ReadInterpolated();
-                    break;
-                default:
-                    ReadRaw();
-                    break;
-            }
+        public IEnumerator<Token> GetEnumerator() => this;
 
-            return this.currentToken != null;
-        }
+        IEnumerator IEnumerable.GetEnumerator() => this;
 
-        public void Dispose()
-        {
-            // Noop
-        }
+        #endregion
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SkipWhitespace()
-        {
-            while (IsWhitespace(reader.CurrentCharacter)) reader.NextCharacter();
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SkipDigits()
-        {
-            while (IsDigit(reader.CurrentCharacter)) reader.NextCharacter();
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SkipIdentifierChars()
-        {
-            var c = reader.CurrentCharacter;
-            while (IsDigit(c) || IsLetter(c) || c == '_') c = reader.NextCharacter();
-        }
+        #region IEnumerator<Token>
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IsIdentifierChar(int c)
-        {
-            return IsDigit(c) || IsLetter(c) || c == '_';
-        }
+        public Token Current => currentToken;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsDigit(int c)
-        {
-            return c >= 48 && c <= 57;
-        }
+        object IEnumerator.Current => currentToken;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsEOF(int c)
-        {
-            return c == -1;
-        }
+        public void Dispose() { }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsLetter(int c)
-        {
-            return IsUppercase(c) || IsLowercase(c);
-        }
+        public bool MoveNext() => ReadNextToken();
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsUppercase(int c)
-        {
-            return c >= 65 && c <= 90;
-        }
+        public void Reset() { }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsLowercase(int c)
-        {
-            return c >= 97 && c <= 122;
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsWhitespace(int c)
-        {
-            return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-        }
+        #endregion
     }
-
 }

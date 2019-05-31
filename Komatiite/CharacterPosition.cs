@@ -18,12 +18,13 @@ namespace Komatiite
 
         public int Index { get; set; }
 
-        private int lastChar = -1;
+        private int lastChar = 0;
 
         public void BumpRow()
         {
             this.Column = 0;
             this.Row = this.Row + 1;
+            this.Index = this.Index + 1;
         }
 
         internal void BumpColumn()
@@ -34,11 +35,15 @@ namespace Komatiite
 
         public void BumpForChar(int c)
         {
+            if (lastChar == -1) return;
             if (lastChar == '\n')
             {
                 BumpRow();
             }
-            BumpColumn();
+            else
+            {
+                BumpColumn();
+            }
             lastChar = c;
         }
 
@@ -80,6 +85,36 @@ namespace Komatiite
             hashCode = hashCode * -1521134295 + Row.GetHashCode();
             hashCode = hashCode * -1521134295 + Index.GetHashCode();
             return hashCode;
+        }
+
+        public static bool operator >(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index > right.Index;
+        }
+
+        public static bool operator <(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index < right.Index;
+        }
+
+        public static bool operator >=(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index >= right.Index;
+        }
+
+        public static bool operator <=(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index <= right.Index;
+        }
+
+        public static int operator +(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index + right.Index;
+        }
+
+        public static int operator -(CharacterPosition left, CharacterPosition right)
+        {
+            return left.Index - right.Index;
         }
 
     }

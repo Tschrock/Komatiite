@@ -10,31 +10,24 @@ namespace Komatiite
         {
             TokenType = type;
             StartPosition = CharacterPosition.Empty;
-            EndPosition = CharacterPosition.Empty;
+            Length = 0;
         }
         public Token(TokenType type, CharacterPosition startPosition)
         {
             TokenType = type;
             StartPosition = startPosition;
-            EndPosition = startPosition;
+            Length = 0;
         }
-        public Token(TokenType type, CharacterPosition startPosition, CharacterPosition endPosition)
+        public Token(TokenType type, CharacterPosition startPosition, int length)
         {
             TokenType = type;
             StartPosition = startPosition;
-            EndPosition = endPosition;
+            Length = length;
         }
 
         public TokenType TokenType { get; set; }
         public CharacterPosition StartPosition { get; set; }
-        public CharacterPosition EndPosition { get; set; }
-        public int Length
-        {
-            get
-            {
-                return EndPosition.Index - StartPosition.Index;
-            }
-        }
+        public int Length { get; set; }
 
         public static bool operator ==(Token left, Token right)
         {
@@ -57,7 +50,7 @@ namespace Komatiite
 
         public bool Equals(Token other)
         {
-            return other != null && TokenType == other.TokenType && StartPosition == other.StartPosition && EndPosition == other.EndPosition;
+            return other != null && TokenType == other.TokenType && StartPosition == other.StartPosition && Length == other.Length;
         }
 
         public override int GetHashCode()
@@ -65,7 +58,7 @@ namespace Komatiite
             var hashCode = 352033288;
             hashCode = hashCode * -1521134295 + TokenType.GetHashCode();
             hashCode = hashCode * -1521134295 + StartPosition.GetHashCode();
-            hashCode = hashCode * -1521134295 + EndPosition.GetHashCode();
+            hashCode = hashCode * -1521134295 + Length.GetHashCode();
             return hashCode;
         }
 
