@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
- 
+
 /// <summary>
 ///     <para>
 ///         Marks a test method as being a data theory. Data theories are tests which

@@ -803,7 +803,7 @@ namespace Komatiite
 
                         // Add a token for the string end
                         AddNewTokenFromCurrent(TokenType.STRING_END, 1);
-                        
+
                         // We're done reading the string, so go back to whatever mode we were in before.
                         PopLexerMode();
 
@@ -856,7 +856,7 @@ namespace Komatiite
 
                             // Add a token for the shorthand comment end
                             AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_COMMENT_EXIT, 2);
-                        
+
                             // We're done reading the shorthand comment, so go back to whatever mode we were in before.
                             PopLexerMode();
 
@@ -881,7 +881,7 @@ namespace Komatiite
 
                                 // Add a token for the shorthand comment end
                                 AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_COMMENT_EXIT, 2);
-                        
+
                                 // We're done reading the shorthand comment, so go back to whatever mode we were in before.
                                 PopLexerMode();
 
@@ -940,7 +940,7 @@ namespace Komatiite
 
                                 // Add a token for the shorthand comment end
                                 AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_EXIT, 3);
-                        
+
                                 // We're done reading the shorthand literal, so go back to whatever mode we were in before.
                                 PopLexerMode();
 
@@ -968,7 +968,7 @@ namespace Komatiite
 
                                     // Add a token for the shorthand comment end
                                     AddNewTokenFromCurrent(TokenType.LAVA_SHORTHAND_LITERAL_EXIT, 3);
-                        
+
                                     // We're done reading the shorthand literal, so go back to whatever mode we were in before.
                                     PopLexerMode();
 

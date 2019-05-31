@@ -18,7 +18,7 @@ namespace Komatiite
         {
             var cat = Char.GetUnicodeCategory((char)c);
 
-            return  c == '_'
+            return c == '_'
                 || cat == UnicodeCategory.LowercaseLetter
                 || cat == UnicodeCategory.TitlecaseLetter
                 || cat == UnicodeCategory.ModifierLetter
@@ -31,7 +31,7 @@ namespace Komatiite
         {
             var cat = Char.GetUnicodeCategory((char)c);
 
-            return  cat == UnicodeCategory.UppercaseLetter
+            return cat == UnicodeCategory.UppercaseLetter
                 || cat == UnicodeCategory.LowercaseLetter
                 || cat == UnicodeCategory.TitlecaseLetter
                 || cat == UnicodeCategory.ModifierLetter

@@ -87,7 +87,7 @@ namespace Komatiite.Tests
 
         [NiceTheory]
         [InlineData("{{{ }}}", TokenType.LAVA_SHORTHAND_LITERAL_ENTER, TokenType.LAVA_SHORTHAND_LITERAL_EXIT)]
-        [InlineData("{# #}",  TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
+        [InlineData("{# #}", TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
         public void Lexer_Should_Lex_Lava_Shorthand_Start_And_End(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
@@ -127,7 +127,7 @@ namespace Komatiite.Tests
 
         [NiceTheory]
         [InlineData("{{{- }}}", TokenType.LAVA_SHORTHAND_LITERAL_ENTER, TokenType.LAVA_SHORTHAND_LITERAL_EXIT)]
-        [InlineData("{#- #}",  TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
+        [InlineData("{#- #}", TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
         public void Lexer_Should_Lex_Lava_Shorthand_Start_And_End_With_Starting_Whitespace_Trim(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
@@ -146,7 +146,7 @@ namespace Komatiite.Tests
 
         [NiceTheory]
         [InlineData("{{{ -}}}", TokenType.LAVA_SHORTHAND_LITERAL_ENTER, TokenType.LAVA_SHORTHAND_LITERAL_EXIT)]
-        [InlineData("{# -#}",  TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
+        [InlineData("{# -#}", TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
         public void Lexer_Should_Lex_Lava_Shorthand_Start_And_End_With_Ending_Whitespace_Trim(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
@@ -184,7 +184,7 @@ namespace Komatiite.Tests
 
         [NiceTheory]
         [InlineData("{{{ }}} Test", TokenType.LAVA_SHORTHAND_LITERAL_ENTER, TokenType.LAVA_SHORTHAND_LITERAL_EXIT)]
-        [InlineData("{# #} Test",  TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
+        [InlineData("{# #} Test", TokenType.LAVA_SHORTHAND_COMMENT_ENTER, TokenType.LAVA_SHORTHAND_COMMENT_EXIT)]
         public void Lexer_Should_Lex_Lava_Shorthand_Start_And_End_With_Text(string testString, TokenType expectedStartToken, TokenType expectedEndToken)
         {
             var lexer = new Lexer(testString);
